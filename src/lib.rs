@@ -31,9 +31,20 @@ pub struct Signals {
     e: bool,
     mlb: bool,
     mx: bool,
-    rwb: bool,
     rdy: bool,
     vpb: bool,
+}
+
+impl Default for Signals {
+    fn default() -> Self {
+        Self {
+            e: true,
+            mlb: true,
+            mx: true,
+            rdy: true,
+            vpb: true,
+        }
+    }
 }
 
 impl Signals {
@@ -73,6 +84,13 @@ impl Signals {
     /// TODO
     pub fn rdy(&self) -> bool {
         self.rdy
+    }
+
+    /// Vector Pull (VPB)
+    ///
+    /// TODO
+    pub fn vpb(&self) -> bool {
+        self.vpb
     }
 }
 
@@ -197,10 +215,6 @@ pub struct CPU {
     s: u16,
     /// RDY signal internal
     rdy: bool,
-    /// Vector Pull (VPB)
-    vpb: bool,
-    /// Memory Lock (MLB)
-    mlb: bool,
     /// Interrupt being handled (internal)
     int: Option<Interrupt>,
     /// Wait for interrupt (WAI) status
@@ -209,28 +223,29 @@ pub struct CPU {
     stp: bool,
     /// Flags
     flags: Flags,
+    /// Signals
+    signals: Signals,
 }
 
 impl Default for CPU {
     fn default() -> Self {
         Self {
-            ir: 0,
-            tcu: 0,
-            a: 0x65,
-            dbr: 0,
-            d: 0,
-            x: 0x0002,
-            y: 0x0081,
-            pbr: 0,
-            pc: 0,
-            s: 0x0186,
+            ir: 0xff,
+            tcu: 0xff,
+            a: 0xff,
+            dbr: 0xff,
+            d: 0xffff,
+            x: 0xffff,
+            y: 0xffff,
+            pbr: 0xff,
+            pc: 0xffff,
+            s: 0xffff,
             rdy: true,
-            vpb: false,
-            mlb: false,
             int: None,
             wai: false,
             stp: false,
             flags: Flags::default(),
+            signals: Signals::default(),
         }
     }
 }
@@ -242,12 +257,14 @@ impl CPU {
 
     pub fn cycle(&mut self, system: &mut impl System) {
         let (rdy, res, nmi, irq) = (
-            system.rdy(),
+            self.rdy(system),
             system.res(),
             system.nmi(),
             system.irq(),
         );
-            
+
+        self.rdy = rdy;
+        
         if !rdy && !self.wai {
             return;
         }
@@ -268,9 +285,9 @@ impl CPU {
         system.rdy() & self.rdy
     }
 
-    /// Vector Pull (VPB)
-    pub fn vpb(&self) -> bool {
-        self.vpb
+    /// Signals
+    pub fn signals(&self) -> &Signals {
+        &self.signals
     }
 
     /// X Index Register (Low)
