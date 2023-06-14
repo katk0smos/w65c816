@@ -290,10 +290,6 @@ impl CPU {
             cpu.state = State::Fetch;
         }
 
-        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, push_pc_p: bool, set_b: bool) {
-
-        }
-
         match self.state {
             State::Reset => {
                 if res {
@@ -303,6 +299,20 @@ impl CPU {
 
                 match self.tcu {
                     1 | 2 => {
+                        self.stp = false;
+                        self.wai = false;
+                        self.flags.emulation = true;
+                        self.flags.mem_sel = true;
+                        self.flags.index_sel = true;
+                        self.flags.decimal = false;
+                        self.flags.interrupt_disable = true;
+                        self.signals.mx = true;
+                        self.d = 0;
+                        self.dbr = 0;
+                        self.pbr = 0;
+                        ByteRef::High(&mut self.x).set(0x00);
+                        ByteRef::High(&mut self.y).set(0x00);
+
                         let _ = system.read(0x0000ff, AddressType::Data, &self.signals);
                     }
                     3 => {
@@ -320,19 +330,6 @@ impl CPU {
                     7 => {
                         let hi = system.read(0x00fffd, AddressType::Vector, &self.signals);
                         ByteRef::High(&mut self.pc).set(hi);
-                        self.stp = false;
-                        self.wai = false;
-                        self.flags.emulation = true;
-                        self.flags.mem_sel = true;
-                        self.flags.index_sel = true;
-                        self.flags.decimal = false;
-                        self.flags.interrupt_disable = true;
-                        self.signals.mx = true;
-                        self.d = 0;
-                        self.dbr = 0;
-                        self.pbr = 0;
-                        ByteRef::High(&mut self.x).set(0x00);
-                        ByteRef::High(&mut self.y).set(0x00);
                         self.state = State::Fetch;
                     }
                     _ => unreachable!(),
