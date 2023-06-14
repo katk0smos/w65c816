@@ -4,8 +4,8 @@
 /// Any given function will be called once per cycle, but not all functions
 /// will be called every cycle.
 pub trait System {
-    fn read(&mut self, addr: u32, addr_type: AddressType) -> u8;
-    fn write(&mut self, addr: u32, data: u8) -> ();
+    fn read(&mut self, addr: u32, addr_type: AddressType, signals: &Signals) -> u8;
+    fn write(&mut self, addr: u32, data: u8, signals: &Signals) -> ();
     fn irq(&mut self) -> bool { false }
     fn nmi(&mut self) -> bool { false }
     fn res(&mut self) -> bool { false }
@@ -14,8 +14,11 @@ pub trait System {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AddressType {
+    Invalid,
     Data,
     Program,
+    Opcode,
+    Vector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,7 +35,6 @@ pub struct Signals {
     mlb: bool,
     mx: bool,
     rdy: bool,
-    vpb: bool,
 }
 
 impl Default for Signals {
@@ -42,7 +44,6 @@ impl Default for Signals {
             mlb: true,
             mx: true,
             rdy: true,
-            vpb: true,
         }
     }
 }
@@ -84,13 +85,6 @@ impl Signals {
     /// TODO
     pub fn rdy(&self) -> bool {
         self.rdy
-    }
-
-    /// Vector Pull (VPB)
-    ///
-    /// TODO
-    pub fn vpb(&self) -> bool {
-        self.vpb
     }
 }
 
@@ -190,6 +184,16 @@ impl Flags {
     }
 }
 
+#[derive(Clone, Debug, Copy, PartialEq, Default)]
+enum State {
+    #[default]
+    Fetch,
+    Reset,
+    Irq,
+    Nmi,
+    NOP,
+}
+
 /// 65c816
 #[derive(Clone, Debug)]
 pub struct CPU {
@@ -225,6 +229,8 @@ pub struct CPU {
     flags: Flags,
     /// Signals
     signals: Signals,
+    /// CPU State
+    state: State,
 }
 
 impl Default for CPU {
@@ -246,6 +252,7 @@ impl Default for CPU {
             stp: false,
             flags: Flags::default(),
             signals: Signals::default(),
+            state: State::default(),
         }
     }
 }
@@ -263,21 +270,107 @@ impl CPU {
             system.irq(),
         );
 
-        self.rdy = rdy;
-        
-        if !rdy && !self.wai {
+        if !rdy && !self.wai && !res {
             return;
         }
 
-        if res {
-            return todo!();
-        } else if nmi {
-            return todo!();
-        } else if irq {
-            return todo!();
+        if self.stp && !res {
+            return;
         }
 
-        todo!("normal cycle")
+        self.tcu += 1;
+
+        fn implied(cpu: &mut CPU, system: &mut impl System) {
+            cpu.signals.mlb = false;
+
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+
+            cpu.state = State::Fetch;
+        }
+
+        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, push_pc_p: bool, set_b: bool) {
+
+        }
+
+        match self.state {
+            State::Reset => {
+                if res {
+                    self.tcu = 0;
+                    return;
+                }
+
+                match self.tcu {
+                    1 | 2 => {
+                        let _ = system.read(0x0000ff, AddressType::Data, &self.signals);
+                    }
+                    3 => {
+                        let _ = system.read(0x000100, AddressType::Data, &self.signals);
+                        self.s = 0x01ff;
+                    },
+                    4 | 5 => {
+                        let _ = system.read(self.s as u32, AddressType::Data, &self.signals);
+                        self.s = self.s.wrapping_sub(1);
+                    }
+                    6 => {
+                        let lo = system.read(0x00fffc, AddressType::Vector, &self.signals);
+                        ByteRef::Low(&mut self.pc).set(lo);
+                    }
+                    7 => {
+                        let hi = system.read(0x00fffd, AddressType::Vector, &self.signals);
+                        ByteRef::High(&mut self.pc).set(hi);
+                        self.stp = false;
+                        self.wai = false;
+                        self.flags.emulation = true;
+                        self.flags.mem_sel = true;
+                        self.flags.index_sel = true;
+                        self.flags.decimal = false;
+                        self.flags.interrupt_disable = true;
+                        self.signals.mx = true;
+                        self.d = 0;
+                        self.dbr = 0;
+                        self.pbr = 0;
+                        ByteRef::High(&mut self.x).set(0x00);
+                        ByteRef::High(&mut self.y).set(0x00);
+                        self.state = State::Fetch;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            State::Fetch => {
+                if res {
+                    self.ir = 0x00;
+                    self.state = State::Reset;
+                    return;
+                } else if nmi {
+                    self.ir = 0x00;
+                    self.state = State::Nmi;
+                    return;
+                } else if irq {
+                    self.ir = 0x00;
+                    self.state = State::Irq;
+                    return;
+                }
+
+                self.signals.mlb = false;
+                self.tcu = 0;
+
+                let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                self.ir = system.read(effective, AddressType::Opcode, &self.signals);
+                self.pc = self.pc.wrapping_add(1);
+        
+                match self.ir {
+                    0xEA => {
+                        self.state = State::NOP;
+                        self.tcu = 0;
+                    }
+                    _ => todo!(),
+                }
+            }
+            State::NOP => implied(self, system),
+            _ => todo!(),
+        }
     }
 
     /// RDY signal, with internal pulldown.
@@ -292,7 +385,8 @@ impl CPU {
 
     /// X Index Register (Low)
     fn xl(&self) -> u8 {
-        (self.x & 0xff) as u8
+        let mut x = self.x;
+        ByteRef::Low(&mut x).get()
     }
     
     /// X Index Register (Low)
@@ -302,7 +396,8 @@ impl CPU {
     
     /// X Index Register (High)
     fn xh(&self) -> u8 {
-        (self.x >> 8) as u8
+        let mut x = self.x;
+        ByteRef::High(&mut x).get()
     }
 
     /// X Index Register (High)
@@ -312,7 +407,8 @@ impl CPU {
 
     /// Y Index Register (Low)
     fn yl(&self) -> u8 {
-        (self.y & 0xff) as u8
+        let mut y = self.y;
+        ByteRef::Low(&mut y).get()
     }
     
     /// Y Index Register (Low)
@@ -322,7 +418,8 @@ impl CPU {
     
     /// Y Index Register (High)
     fn yh(&self) -> u8 {
-        (self.y >> 8) as u8
+        let mut y = self.y;
+        ByteRef::High(&mut y).get()
     }
 
     /// Y Index Register (High)
@@ -340,7 +437,11 @@ impl CPU {
             self.pbr = self.pbr.wrapping_add(1);
         }
 
-        system.read(effective, AddressType::Program)
+        system.read(effective, AddressType::Program, &self.signals)
+    }
+
+    fn absolute_a(&self, system: &mut impl System, addr: u16) -> u32 {
+        ((self.dbr as u32) << 16) | addr as u32
     }
 }
 
