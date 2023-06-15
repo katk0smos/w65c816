@@ -254,7 +254,7 @@ impl Default for CPU {
             s: 0xffff,
             rdy: true,
             wai: false,
-            stp: false,
+            stp: true,
             flags: Flags::default(),
             signals: Signals::default(),
             state: State::default(),
@@ -374,14 +374,18 @@ impl CPU {
 
                 if res {
                     self.ir = 0x00;
+                    self.stp = false;
+                    self.wai = false;
                     self.state = State::Reset;
                     return;
                 } else if nmi {
                     self.ir = 0x00;
+                    self.wai = false;
                     self.state = State::Nmi;
                     return;
                 } else if irq {
                     self.ir = 0x00;
+                    self.wai = false;
                     self.state = State::Irq;
                     return;
                 }
@@ -403,6 +407,35 @@ impl CPU {
                 }
             }
             State::NOP => implied(self, system),
+            State::Lda(AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
+                (true, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.a).set(a);
+                    self.flags.zero = a == 0;
+                    self.flags.negative = (a >> 7) != 0;
+                    self.state = State::Fetch;
+                }
+                (false, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.a).set(a);
+                    self.flags.zero = a == 0;
+                }
+                (false, 2) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::High(&mut self.a).set(a);
+                    self.flags.zero = self.flags.zero && a == 0;
+                    self.flags.negative = ((a >> 7) & 1) != 0;
+                    
+                    self.state = State::Fetch;
+                }
+                _ => unreachable!("lda #, {:?} in match", (self.flags.emulation, self.tcu)),
+            }
             _ => todo!("{:?}", self.state),
         }
     }
@@ -576,6 +609,39 @@ mod tests {
         assert_eq!(cpu.flags.decimal, false, "d");
         assert_eq!(cpu.flags.interrupt_disable, true, "i");
         assert_eq!(cpu.flags.carry, true, "c");
+    }
+
+    #[test]
+    fn lda() {
+        let mut cpu = CPU::new();
+        let mut sys = Sys::default();
+        sys.ram[0xfffc] = 0x00;
+        sys.ram[0xfffd] = 0x80;
+        sys.ram[0x8000] = 0xA9;
+        sys.ram[0x8001] = 0x84;
+
+        for _ in 0..8+2 {
+            cpu.cycle(&mut sys);
+        }
+
+        assert_eq!(cpu.pc, 0x8002, "CPU reset improperly");
+        assert_eq!(cpu.dbr, 00, "dbr");
+        assert_eq!(cpu.pbr, 00, "pbr");
+        assert_eq!(cpu.d, 0x0000, "d");
+        assert_eq!(cpu.s & 0xff00, 0x0100, "s");
+        assert_eq!(cpu.a & 0x00ff, 0x0084, "a");
+        assert_eq!(cpu.x & 0xff00, 0x0000, "x");
+        assert_eq!(cpu.y & 0xff00, 0x0000, "y");
+        assert_eq!(cpu.signals.e, cpu.flags.emulation, "emulation");
+        assert_eq!(cpu.signals.e, true, "emulation");
+        assert_eq!(cpu.signals.mx, true, "mx");
+        assert_eq!(cpu.flags.mem_sel, true, "m");
+        assert_eq!(cpu.flags.index_sel, true, "x");
+        assert_eq!(cpu.flags.decimal, false, "d");
+        assert_eq!(cpu.flags.interrupt_disable, true, "i");
+        assert_eq!(cpu.flags.carry, true, "c");
+        assert_eq!(cpu.flags.zero, false, "z");
+        assert_eq!(cpu.flags.negative, true, "n");
     }
 
     #[test]
