@@ -298,7 +298,7 @@ impl CPU {
                 }
 
                 match self.tcu {
-                    1 | 2 => {
+                    0 | 1 | 2 => {
                         self.stp = false;
                         self.wai = false;
                         self.flags.emulation = true;
@@ -331,11 +331,15 @@ impl CPU {
                         let hi = system.read(0x00fffd, AddressType::Vector, &self.signals);
                         ByteRef::High(&mut self.pc).set(hi);
                         self.state = State::Fetch;
+                        self.tcu = 0;
                     }
-                    _ => unreachable!(),
+                    i => unreachable!("{}", i),
                 }
             }
             State::Fetch => {
+                self.signals.mlb = false;
+                self.tcu = 0;
+
                 if res {
                     self.ir = 0x00;
                     self.state = State::Reset;
@@ -349,9 +353,6 @@ impl CPU {
                     self.state = State::Irq;
                     return;
                 }
-
-                self.signals.mlb = false;
-                self.tcu = 0;
 
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
@@ -479,9 +480,63 @@ impl ByteRef<'_> {
 mod tests {
     use super::*;
 
+    struct Sys {
+        ram: [u8; 0x10000],
+        res: bool,
+    }
+
+    impl Default for Sys {
+        fn default() -> Self {
+            Self {
+                ram: [0xEA; 0x10000],
+                res: false,
+            }
+        }
+    }
+
+    impl System for Sys {
+        fn read(&mut self, a: u32, at: AddressType, signals: &Signals) -> u8 {
+            self.ram[(a & 0x00ffff) as usize]
+        }
+
+        fn write(&mut self, a: u32, d: u8, signals: &Signals) {
+            self.ram[(a & 0xffffff) as usize] = d;
+        }
+
+        fn res(&mut self) -> bool {
+            let x = self.res;
+
+            if !x {
+                self.res = true;
+            }
+
+            return !x;
+        }
+    }
+
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn reset() {
+        let mut cpu = CPU::new();
+        let mut sys = Sys::default();
+        sys.ram[0xfffc] = 0x00;
+        sys.ram[0xfffd] = 0x80;
+
+        for _ in 0..8 {
+            cpu.cycle(&mut sys);
+        }
+
+        assert_eq!(cpu.pc, 0x8000, "CPU reset improperly");
+    }
+
+    #[test]
+    fn runs_forever_with_nop() {
+        let mut cpu = CPU::new();
+        let mut sys = Sys::default();
+
+        for _ in 0..8+0x2000000 {
+            cpu.cycle(&mut sys);
+        }
+
+        assert_eq!(cpu.pc, 0xEAEA);
     }
 }
