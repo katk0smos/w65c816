@@ -153,7 +153,8 @@ impl Flags {
     /// `xce = true; is_native = false` => `NV1BDIZE`
     /// `xce = false; is_native = true` => `NVMXDIZC`
     /// `xce = true; is_native = true` => `NVMXDIZE`
-    pub fn as_byte(self, xce: bool, is_native: bool) -> u8 {
+    pub fn as_byte(self, xce: bool) -> u8 {
+        let is_native = !self.emulation;
         let mut byte = 0u8;
 
         if self.zero {
@@ -324,7 +325,7 @@ impl CPU {
                 }
                 5 => {
                     if store_pc_p {
-                        system.write((cpu.dbr as u32) << 16 | (cpu.s as u32), cpu.flags.as_byte(xce, !cpu.flags.emulation), &cpu.signals);
+                        system.write((cpu.dbr as u32) << 16 | (cpu.s as u32), cpu.flags.as_byte(xce), &cpu.signals);
                     } else {
                         system.read((cpu.dbr as u32) << 16 | (cpu.s as u32), AddressType::Data, &cpu.signals);
                     }
