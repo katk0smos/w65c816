@@ -28,6 +28,14 @@ pub enum Interrupt {
     Irq,
 }
 
+/// CPU Register
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Register {
+    A,
+    X,
+    Y,
+}
+
 /// CPU Signals
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Signals {
@@ -191,7 +199,7 @@ enum State {
     Reset,
     Irq,
     Nmi,
-    Lda(AddressingMode),
+    Ld(Register, AddressingMode),
     NOP,
 }
 
@@ -399,37 +407,52 @@ impl CPU {
                         self.tcu = 0;
                     }
                     0xA9 => {
-                        self.state = State::Lda(AddressingMode::Immediate);
+                        self.state = State::Ld(Register::A, AddressingMode::Immediate);
                         self.tcu = 0;
                     }
                     _ => todo!(),
                 }
             }
             State::NOP => implied(self, system),
-            State::Lda(AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
+            State::Ld(reg, AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
                 (true, _) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    let x = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::Low(&mut self.a).set(a);
-                    self.flags.zero = a == 0;
-                    self.flags.negative = (a >> 7) != 0;
+                    ByteRef::Low(match reg {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                        _ => unreachable!(),
+                    }).set(x);
+                    self.flags.zero = x == 0;
+                    self.flags.negative = (x >> 7) != 0;
                     self.state = State::Fetch;
                 }
                 (false, 1) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    let x = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::Low(&mut self.a).set(a);
-                    self.flags.zero = a == 0;
+                    ByteRef::Low(match reg {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                        _ => unreachable!(),
+                    }).set(x);
+                    self.flags.zero = x == 0;
                 }
                 (false, 2) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let a = system.read(effective, AddressType::Program, &self.signals);
+                    let x = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::High(&mut self.a).set(a);
-                    self.flags.zero = self.flags.zero && a == 0;
-                    self.flags.negative = ((a >> 7) & 1) != 0;
+                    ByteRef::Low(match reg {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                        _ => unreachable!(),
+                    }).set(x);
+                    self.flags.zero = self.flags.zero && x == 0;
+                    self.flags.negative = ((x >> 7) & 1) != 0;
                     
                     self.state = State::Fetch;
                 }
