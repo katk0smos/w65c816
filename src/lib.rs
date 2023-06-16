@@ -204,6 +204,20 @@ enum State {
     NOP,
 }
 
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum Byte {
+    Low(u8),
+    High(u8),
+}
+
+impl From<Byte> for u8 {
+    fn from(x: Byte) -> u8 {
+        match x {
+            Byte::Low(x) | Byte::High(x) => x,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
 enum AddressingMode {
     #[default]
@@ -212,17 +226,32 @@ enum AddressingMode {
 }
 
 impl AddressingMode {
-    pub fn read(self, cpu: &mut CPU, system: &mut impl System) -> u8 {
+    pub fn read(self, cpu: &mut CPU, system: &mut impl System) -> Option<Byte> {
         match self {
-            AddressingMode::Immediate => {
-                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
-                let value = system.read(effective, AddressType::Program, &cpu.signals);
-                cpu.pc = cpu.pc.wrapping_add(1);
-                value
+            AddressingMode::Immediate => match (cpu.flags.emulation, cpu.tcu) {
+                (true, _) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(Byte::Low(value))
+                }
+                (false, 1) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(Byte::Low(value))
+                }
+                (false, 2) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(Byte::High(value))
+                }
+                _ => None,
             }
             AddressingMode::Implied => {
                 let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
-                system.read(effective, AddressType::Invalid, &cpu.signals)
+                Some(Byte::Low(system.read(effective, AddressType::Invalid, &cpu.signals)))
             }
         }
     }
@@ -448,7 +477,7 @@ impl CPU {
             State::Ld(reg, AddressingMode::Immediate) => 
                 match (self.flags.emulation, self.tcu) {
                 (true, _) => {
-                    let x = AddressingMode::Immediate.read(self, system);
+                    let x: u8 = AddressingMode::Immediate.read(self, system).unwrap().into();
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
                         Register::X => &mut self.x,
@@ -459,28 +488,28 @@ impl CPU {
                     self.flags.negative = (x >> 7) != 0;
                     self.state = State::Fetch;
                 }
-                (false, 1) => {
-                    let x = AddressingMode::Immediate.read(self, system);
-                    ByteRef::Low(match reg {
-                        Register::A => &mut self.a,
-                        Register::X => &mut self.x,
-                        Register::Y => &mut self.y,
-                        _ => unreachable!(),
-                    }).set(x);
-                    self.flags.zero = x == 0;
-                }
-                (false, 2) => {
-                    let x = AddressingMode::Immediate.read(self, system);
-                    ByteRef::Low(match reg {
-                        Register::A => &mut self.a,
-                        Register::X => &mut self.x,
-                        Register::Y => &mut self.y,
-                        _ => unreachable!(),
-                    }).set(x);
-                    self.flags.zero = self.flags.zero && x == 0;
-                    self.flags.negative = ((x >> 7) & 1) != 0;
+                (false, _) => match AddressingMode::Immediate.read(self, system).unwrap() {
+                    Byte::Low(x) => {
+                        ByteRef::Low(match reg {
+                            Register::A => &mut self.a,
+                            Register::X => &mut self.x,
+                            Register::Y => &mut self.y,
+                            _ => unreachable!(),
+                        }).set(x);
+                        self.flags.zero = x == 0;
+                    }
+                    Byte::High(x) => {
+                       ByteRef::Low(match reg {
+                            Register::A => &mut self.a,
+                            Register::X => &mut self.x,
+                            Register::Y => &mut self.y,
+                            _ => unreachable!(),
+                        }).set(x);
+                        self.flags.zero = self.flags.zero && x == 0;
+                        self.flags.negative = ((x >> 7) & 1) != 0;
                     
-                    self.state = State::Fetch;
+                        self.state = State::Fetch;
+                    }
                 }
                 _ => unreachable!("lda #, {:?} in match", (self.flags.emulation, self.tcu)),
             }
