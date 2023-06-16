@@ -5,7 +5,7 @@
 /// will be called every cycle.
 pub trait System {
     fn read(&mut self, addr: u32, addr_type: AddressType, signals: &Signals) -> u8;
-    fn write(&mut self, addr: u32, data: u8, signals: &Signals) -> ();
+    fn write(&mut self, addr: u32, data: u8, signals: &Signals);
     fn irq(&mut self) -> bool { false }
     fn nmi(&mut self) -> bool { false }
     fn res(&mut self) -> bool { false }
@@ -306,7 +306,7 @@ impl CPU {
             cpu.state = State::Fetch;
         }
 
-        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, store_pc_p: bool, set_b: bool) {
+        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, store_pc_p: bool, _set_b: bool) {
             let xce = cpu.xce;
 
             match cpu.tcu {
@@ -536,7 +536,7 @@ impl CPU {
         system.read(effective, AddressType::Program, &self.signals)
     }
 
-    fn absolute_a(&self, system: &mut impl System, addr: u16) -> u32 {
+    fn absolute_a(&self, _system: &mut impl System, addr: u16) -> u32 {
         ((self.dbr as u32) << 16) | addr as u32
     }
 }
