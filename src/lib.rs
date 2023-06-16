@@ -413,6 +413,14 @@ impl CPU {
                         self.state = State::NOP;
                         self.tcu = 0;
                     }
+                    0xA0 => {
+                        self.state = State::Ld(Register::Y, AddressingMode::Immediate);
+                        self.tcu = 0;
+                    }
+                    0xA2 => {
+                        self.state = State::Ld(Register::X, AddressingMode::Immediate);
+                        self.tcu = 0;
+                    }
                     0xA9 => {
                         self.state = State::Ld(Register::A, AddressingMode::Immediate);
                         self.tcu = 0;
@@ -641,26 +649,30 @@ mod tests {
     }
 
     #[test]
-    fn lda() {
+    fn init() {
         let mut cpu = CPU::new();
         let mut sys = Sys::default();
         sys.ram[0xfffc] = 0x00;
         sys.ram[0xfffd] = 0x80;
         sys.ram[0x8000] = 0xA9;
         sys.ram[0x8001] = 0x84;
+        sys.ram[0x8002] = 0xA0;
+        sys.ram[0x8003] = 0x95;
+        sys.ram[0x8004] = 0xA2;
+        sys.ram[0x8005] = 0x23;
 
-        for _ in 0..8+2 {
+        for _ in 0..8+2*3 {
             cpu.cycle(&mut sys);
         }
 
-        assert_eq!(cpu.pc, 0x8002, "CPU reset improperly");
+        assert_eq!(cpu.pc, 0x8006, "CPU reset improperly");
         assert_eq!(cpu.dbr, 00, "dbr");
         assert_eq!(cpu.pbr, 00, "pbr");
         assert_eq!(cpu.d, 0x0000, "d");
         assert_eq!(cpu.s & 0xff00, 0x0100, "s");
         assert_eq!(cpu.a & 0x00ff, 0x0084, "a");
-        assert_eq!(cpu.x & 0xff00, 0x0000, "x");
-        assert_eq!(cpu.y & 0xff00, 0x0000, "y");
+        assert_eq!(cpu.x & 0xffff, 0x0023, "x");
+        assert_eq!(cpu.y & 0xffff, 0x0095, "y");
         assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
         assert_eq!(cpu.signals.e, true, "emulation");
         assert_eq!(cpu.signals.mx, true, "mx");
@@ -670,7 +682,7 @@ mod tests {
         assert_eq!(cpu.flags.interrupt_disable, true, "i");
         assert_eq!(cpu.flags.carry, true, "c");
         assert_eq!(cpu.flags.zero, false, "z");
-        assert_eq!(cpu.flags.negative, true, "n");
+        assert_eq!(cpu.flags.negative, false, "n");
     }
 
     #[test]
