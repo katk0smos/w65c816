@@ -246,6 +246,8 @@ pub struct CPU {
     signals: Signals,
     /// CPU State
     state: State,
+    /// Exchange Carry and Emulation status
+    xce: bool,
 }
 
 impl Default for CPU {
@@ -264,6 +266,7 @@ impl Default for CPU {
             rdy: true,
             wai: false,
             stp: true,
+            xce: false,
             flags: Flags::default(),
             signals: Signals::default(),
             state: State::default(),
@@ -303,7 +306,9 @@ impl CPU {
             cpu.state = State::Fetch;
         }
 
-        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, store_pc_p: bool, set_b: bool, xce: bool) {
+        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, store_pc_p: bool, set_b: bool) {
+            let xce = cpu.xce;
+
             match cpu.tcu {
                 3 => {
                     if store_pc_p {
@@ -360,6 +365,7 @@ impl CPU {
                         self.flags.index_sel = true;
                         self.flags.decimal = false;
                         self.signals.mx = true;
+                        self.xce = false;
                         self.d = 0;
                         self.dbr = 0;
                         self.pbr = 0;
@@ -371,9 +377,9 @@ impl CPU {
                     }
                     4 => {
                         self.s = 0x01ff;
-                        interrupt(self, system, 0xfffc, false, false, false);
+                        interrupt(self, system, 0xfffc, false, false);
                     }
-                    _ => interrupt(self, system, 0xfffc, false, false, false),
+                    _ => interrupt(self, system, 0xfffc, false, false),
                 }
             }
             State::Fetch => {
