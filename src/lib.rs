@@ -211,6 +211,23 @@ enum AddressingMode {
     Immediate,
 }
 
+impl AddressingMode {
+    pub fn read(self, cpu: &mut CPU, system: &mut impl System) -> u8 {
+        match self {
+            AddressingMode::Immediate => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let value = system.read(effective, AddressType::Program, &cpu.signals);
+                cpu.pc = cpu.pc.wrapping_add(1);
+                value
+            }
+            AddressingMode::Implied => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                system.read(effective, AddressType::Invalid, &cpu.signals)
+            }
+        }
+    }
+}
+
 /// 65c816
 #[derive(Clone, Debug)]
 pub struct CPU {
@@ -300,8 +317,7 @@ impl CPU {
         fn implied(cpu: &mut CPU, system: &mut impl System) {
             cpu.signals.mlb = false;
 
-            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
-            let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
+            let _ = AddressingMode::Implied.read(cpu, system);
 
             cpu.state = State::Fetch;
         }
@@ -373,7 +389,7 @@ impl CPU {
                         ByteRef::High(&mut self.x).set(0x00);
                         ByteRef::High(&mut self.y).set(0x00);
 
-                        let _ = system.read(0x0000ff, AddressType::Data, &self.signals);
+                        let _ = system.read(0x0000ff, AddressType::Invalid, &self.signals);
                     }
                     4 => {
                         self.s = 0x01ff;
@@ -429,11 +445,10 @@ impl CPU {
                 }
             }
             State::NOP => implied(self, system),
-            State::Ld(reg, AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
+            State::Ld(reg, AddressingMode::Immediate) => 
+                match (self.flags.emulation, self.tcu) {
                 (true, _) => {
-                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let x = system.read(effective, AddressType::Program, &self.signals);
-                    self.pc = self.pc.wrapping_add(1);
+                    let x = AddressingMode::Immediate.read(self, system);
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
                         Register::X => &mut self.x,
@@ -445,9 +460,7 @@ impl CPU {
                     self.state = State::Fetch;
                 }
                 (false, 1) => {
-                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let x = system.read(effective, AddressType::Program, &self.signals);
-                    self.pc = self.pc.wrapping_add(1);
+                    let x = AddressingMode::Immediate.read(self, system);
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
                         Register::X => &mut self.x,
@@ -457,9 +470,7 @@ impl CPU {
                     self.flags.zero = x == 0;
                 }
                 (false, 2) => {
-                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                    let x = system.read(effective, AddressType::Program, &self.signals);
-                    self.pc = self.pc.wrapping_add(1);
+                    let x = AddressingMode::Immediate.read(self, system);
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
                         Register::X => &mut self.x,
