@@ -290,7 +290,6 @@ impl CPU {
 
             let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
-            cpu.pc = cpu.pc.wrapping_add(1);
 
             cpu.state = State::Fetch;
         }
@@ -632,7 +631,7 @@ mod tests {
         assert_eq!(cpu.a & 0x00ff, 0x0084, "a");
         assert_eq!(cpu.x & 0xff00, 0x0000, "x");
         assert_eq!(cpu.y & 0xff00, 0x0000, "y");
-        assert_eq!(cpu.signals.e, cpu.flags.emulation, "emulation");
+        assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
         assert_eq!(cpu.signals.e, true, "emulation");
         assert_eq!(cpu.signals.mx, true, "mx");
         assert_eq!(cpu.flags.mem_sel, true, "m");
