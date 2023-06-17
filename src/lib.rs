@@ -476,8 +476,7 @@ impl CPU {
             State::NOP => implied(self, system),
             State::Ld(reg, AddressingMode::Immediate) => 
                 match (self.flags.emulation, self.tcu) {
-                (true, _) => {
-                    let x: u8 = AddressingMode::Immediate.read(self, system).unwrap().into();
+                (true, _) => if let Some(Byte::Low(x)) = AddressingMode::Immediate.read(self, system) {
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
                         Register::X => &mut self.x,
@@ -488,8 +487,8 @@ impl CPU {
                     self.flags.negative = (x >> 7) != 0;
                     self.state = State::Fetch;
                 }
-                (false, _) => match AddressingMode::Immediate.read(self, system).unwrap() {
-                    Byte::Low(x) => {
+                (false, _) => match AddressingMode::Immediate.read(self, system) {
+                    Some(Byte::Low(x)) => {
                         ByteRef::Low(match reg {
                             Register::A => &mut self.a,
                             Register::X => &mut self.x,
@@ -498,7 +497,7 @@ impl CPU {
                         }).set(x);
                         self.flags.zero = x == 0;
                     }
-                    Byte::High(x) => {
+                    Some(Byte::High(x)) => {
                        ByteRef::Low(match reg {
                             Register::A => &mut self.a,
                             Register::X => &mut self.x,
@@ -510,6 +509,7 @@ impl CPU {
                     
                         self.state = State::Fetch;
                     }
+                    _ => (),
                 }
                 _ => unreachable!("lda #, {:?} in match", (self.flags.emulation, self.tcu)),
             }
