@@ -3,6 +3,9 @@
 #[cfg(test)]
 mod tests;
 
+mod util;
+use util::*;
+
 /// Trait that systems should implement.
 /// Any given function will be called once per cycle, but not all functions
 /// will be called every cycle.
@@ -20,6 +23,9 @@ pub trait System {
     }
     fn rdy(&mut self) -> bool {
         true
+    }
+    fn abort(&mut self) -> bool {
+        false
     }
 }
 
@@ -76,7 +82,8 @@ pub enum Register {
 pub struct Signals {
     e: bool,
     mlb: bool,
-    mx: bool,
+    m: bool,
+    x: bool,
     rdy: bool,
 }
 
@@ -85,7 +92,8 @@ impl Default for Signals {
         Self {
             e: true,
             mlb: true,
-            mx: true,
+            m: true,
+            x: true,
             rdy: true,
         }
     }
@@ -119,8 +127,12 @@ impl Signals {
     /// Register. Flag M is valid during PHI2 negative transition. and Flag X is
     /// valid during PHI2 positive transition. These bits may be thought of as
     /// opcode extensions and may be used for memory and system management.
-    pub fn mx(&self) -> bool {
-        self.mx
+    pub fn mx(&self, phi2: bool) -> bool {
+        if !phi2 {
+            self.m
+        } else {
+            self.x
+        }
     }
 
     /// Ready (RDY)
@@ -214,20 +226,6 @@ impl Flags {
     }
 }
 
-/// Internal state machine
-#[derive(Clone, Debug, Copy, PartialEq, Default)]
-enum State {
-    #[default]
-    Fetch,
-    Reset,
-    Irq,
-    Nmi,
-    Ld(Register, AddressingMode),
-    Nop,
-    Xce,
-    Xba,
-}
-
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum TaggedByte {
     Data(Byte),
@@ -317,6 +315,21 @@ impl AddressingMode {
     }
 }
 
+/// Internal state machine
+#[derive(Clone, Debug, Copy, PartialEq, Default)]
+enum State {
+    #[default]
+    Fetch,
+    Reset,
+    Irq,
+    Nmi,
+    Abort,
+    Ld(Register, AddressingMode),
+    Nop,
+    Xce,
+    Xba,
+}
+
 /// 65c816
 #[derive(Clone, Debug)]
 pub struct CPU {
@@ -352,8 +365,8 @@ pub struct CPU {
     signals: Signals,
     /// CPU State
     state: State,
-    /// Exchange Carry and Emulation status
-    xce: bool,
+    /// Whether to inhibit internal register changes
+    aborted: bool,
     /// Temporary register for internal use.
     /// Used for addressing instructions
     temp: u16,
@@ -375,7 +388,7 @@ impl Default for CPU {
             rdy: true,
             wai: false,
             stp: true,
-            xce: false,
+            aborted: false,
             flags: Flags::default(),
             signals: Signals::default(),
             state: State::default(),
@@ -390,7 +403,13 @@ impl CPU {
     }
 
     pub fn cycle(&mut self, system: &mut impl System) {
-        let (rdy, res, nmi, irq) = (self.rdy(system), system.res(), system.nmi(), system.irq());
+        let (rdy, res, nmi, irq, abort) = (
+            self.rdy(system),
+            system.res(),
+            system.nmi(),
+            system.irq(),
+            system.abort(),
+        );
 
         if !rdy && !self.wai && !res {
             return;
@@ -400,14 +419,19 @@ impl CPU {
             return;
         }
 
+        // Hijack the state for ABORTs
+        if self.aborted && self.state == State::Fetch {
+            self.state = State::Abort;
+        } else if abort {
+            self.aborted = true;
+        }
+
         self.tcu += 1;
         self.signals.rdy = rdy;
 
         fn implied(cpu: &mut CPU, system: &mut impl System) {
             cpu.signals.mlb = false;
-
             let _ = AddressingMode::Implied.read(cpu, system);
-
             cpu.state = State::Fetch;
         }
 
@@ -507,8 +531,9 @@ impl CPU {
                         self.flags.mem_sel = true;
                         self.flags.index_sel = true;
                         self.flags.decimal = false;
-                        self.signals.mx = true;
-                        self.xce = false;
+                        self.signals.m = true;
+                        self.signals.x = true;
+                        self.aborted = false;
                         self.d = 0;
                         self.dbr = 0;
                         self.pbr = 0;
@@ -523,6 +548,13 @@ impl CPU {
                         interrupt(self, system, 0xfffc, false, false);
                     }
                     _ => interrupt(self, system, 0xfffc, false, false),
+                }
+            }
+            State::Abort => {
+                if self.flags.emulation {
+                    interrupt(self, system, 0x00fff8, true, false);
+                } else {
+                    interrupt(self, system, 0x00ffe8, true, false);
                 }
             }
             State::Fetch => {
@@ -593,15 +625,19 @@ impl CPU {
             }
             State::Nop => implied(self, system),
             State::Xce => {
-                core::mem::swap(&mut self.flags.carry, &mut self.flags.emulation);
-                self.signals.e = self.flags.emulation;
+                if !self.aborted {
+                    core::mem::swap(&mut self.flags.carry, &mut self.flags.emulation);
+                    self.signals.e = self.flags.emulation;
 
-                if self.flags.emulation {
-                    self.flags.mem_sel = true;
-                    self.flags.index_sel = true;
-                    ByteRef::High(&mut self.s).set(0x01);
-                    ByteRef::High(&mut self.x).set(0);
-                    ByteRef::High(&mut self.y).set(0);
+                    if self.flags.emulation {
+                        self.flags.mem_sel = true;
+                        self.flags.index_sel = true;
+                        self.signals.m = true;
+                        self.signals.x = true;
+                        ByteRef::High(&mut self.s).set(0x01);
+                        ByteRef::High(&mut self.x).set(0);
+                        ByteRef::High(&mut self.y).set(0);
+                    }
                 }
 
                 implied(self, system);
@@ -612,12 +648,14 @@ impl CPU {
 
                 match self.tcu {
                     1 => {
-                        let b = ByteRef::High(&mut self.a).get();
-                        let a = ByteRef::Low(&mut self.a).get();
-                        ByteRef::High(&mut self.a).set(a);
-                        ByteRef::Low(&mut self.a).set(b);
-                        self.flags.negative = ((b >> 7) & 1) != 0;
-                        self.flags.zero = b != 0;
+                        if !self.aborted {
+                            let b = ByteRef::High(&mut self.a).get();
+                            let a = ByteRef::Low(&mut self.a).get();
+                            ByteRef::High(&mut self.a).set(a);
+                            ByteRef::Low(&mut self.a).set(b);
+                            self.flags.negative = ((b >> 7) & 1) != 0;
+                            self.flags.zero = b != 0;
+                        }
                     }
                     2 => self.state = State::Fetch,
                     _ => (),
@@ -626,44 +664,54 @@ impl CPU {
             State::Ld(reg, AddressingMode::Immediate) => match (match reg {
                 Register::A => self.a_width(),
                 Register::X | Register::Y => self.index_width(),
-            }) == 8 {
+            }) == 8
+            {
                 true => {
                     if let Some(TaggedByte::Data(Byte::Low(x))) =
                         AddressingMode::Immediate.read(self, system)
                     {
-                        ByteRef::Low(match reg {
-                            Register::A => &mut self.a,
-                            Register::X => &mut self.x,
-                            Register::Y => &mut self.y,
-                            _ => unreachable!(),
-                        })
-                        .set(x);
-                        self.flags.zero = x == 0;
-                        self.flags.negative = (x >> 7) != 0;
+                        if !self.aborted {
+                            ByteRef::Low(match reg {
+                                Register::A => &mut self.a,
+                                Register::X => &mut self.x,
+                                Register::Y => &mut self.y,
+                                _ => unreachable!(),
+                            })
+                            .set(x);
+
+                            self.flags.zero = x == 0;
+                            self.flags.negative = (x >> 7) != 0;
+                        }
                         self.state = State::Fetch;
                     }
                 }
                 false => match AddressingMode::Immediate.read(self, system) {
                     Some(TaggedByte::Data(Byte::Low(x))) => {
-                        ByteRef::Low(match reg {
-                            Register::A => &mut self.a,
-                            Register::X => &mut self.x,
-                            Register::Y => &mut self.y,
-                            _ => unreachable!(),
-                        })
-                        .set(x);
-                        self.flags.zero = x == 0;
+                        if !self.aborted {
+                            ByteRef::Low(match reg {
+                                Register::A => &mut self.a,
+                                Register::X => &mut self.x,
+                                Register::Y => &mut self.y,
+                                _ => unreachable!(),
+                            })
+                            .set(x);
+
+                            self.flags.zero = x == 0;
+                        }
                     }
                     Some(TaggedByte::Data(Byte::High(x))) => {
-                        ByteRef::Low(match reg {
-                            Register::A => &mut self.a,
-                            Register::X => &mut self.x,
-                            Register::Y => &mut self.y,
-                            _ => unreachable!(),
-                        })
-                        .set(x);
-                        self.flags.zero = self.flags.zero && x == 0;
-                        self.flags.negative = ((x >> 7) & 1) != 0;
+                        if !self.aborted {
+                            ByteRef::Low(match reg {
+                                Register::A => &mut self.a,
+                                Register::X => &mut self.x,
+                                Register::Y => &mut self.y,
+                                _ => unreachable!(),
+                            })
+                            .set(x);
+
+                            self.flags.zero = self.flags.zero && x == 0;
+                            self.flags.negative = ((x >> 7) & 1) != 0;
+                        }
 
                         self.state = State::Fetch;
                     }
@@ -676,27 +724,32 @@ impl CPU {
                 Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
                 Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
                 Some(TaggedByte::Data(Byte::Low(x))) => {
-                    ByteRef::Low(match reg {
-                        Register::A => &mut self.a,
-                        Register::X => &mut self.x,
-                        Register::Y => &mut self.y,
-                    })
-                    .set(x);
+                    if !self.aborted {
+                        ByteRef::Low(match reg {
+                            Register::A => &mut self.a,
+                            Register::X => &mut self.x,
+                            Register::Y => &mut self.y,
+                        })
+                        .set(x);
+                    }
 
                     if match reg {
                         Register::A => self.a_width(),
                         Register::X | Register::Y => self.index_width(),
-                    } == 8 {
+                    } == 8
+                    {
                         self.state = State::Fetch;
                     }
                 }
                 Some(TaggedByte::Data(Byte::High(x))) => {
-                    ByteRef::High(match reg {
-                        Register::A => &mut self.a,
-                        Register::X => &mut self.x,
-                        Register::Y => &mut self.y,
-                    })
-                    .set(x);
+                    if !self.aborted {
+                        ByteRef::High(match reg {
+                            Register::A => &mut self.a,
+                            Register::X => &mut self.x,
+                            Register::Y => &mut self.y,
+                        })
+                        .set(x);
+                    }
 
                     self.state = State::Fetch;
                 }
@@ -760,29 +813,12 @@ impl CPU {
         ByteRef::High(&mut self.y)
     }
 
-    /// Read next program byte
-    fn next_prg_byte(&mut self, system: &mut impl System, inc_bank: bool) -> u8 {
-        let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-        let (pc, overflow) = self.pc.overflowing_add(1);
-        self.pc = pc;
-
-        if inc_bank && overflow {
-            self.pbr = self.pbr.wrapping_add(1);
-        }
-
-        system.read(effective, AddressType::Program, &self.signals)
-    }
-
-    fn absolute_a(&self, _system: &mut impl System, addr: u16) -> u32 {
-        ((self.dbr as u32) << 16) | addr as u32
-    }
-
     /// Returns the width of the accumulator, either 8 or 16
     fn a_width(&self) -> u8 {
         match (self.flags.emulation, self.flags.mem_sel) {
             (true, _) | (false, false) => 8,
             (false, true) => 16,
-        }   
+        }
     }
 
     /// Returns the width of index registers, either 8 or 16
@@ -790,39 +826,29 @@ impl CPU {
         match (self.flags.emulation, self.flags.index_sel) {
             (true, _) | (false, false) => 8,
             (false, true) => 16,
-        }   
-    }
-}
-
-/// A reference to a specific byte in a word
-#[derive(Debug, PartialEq, Eq)]
-pub enum ByteRef<'a> {
-    Low(&'a mut u16),
-    High(&'a mut u16),
-}
-
-impl ByteRef<'_> {
-    /// Gets the byte
-    pub fn get(&self) -> u8 {
-        match self {
-            ByteRef::Low(x) => (**x & 0xff) as u8,
-            ByteRef::High(x) => (**x >> 8) as u8,
         }
     }
 
-    /// Sets the byte
-    pub fn set(&mut self, value: u8) {
-        match self {
-            ByteRef::Low(x) => **x = (**x & 0xff00) | (value as u16),
-            ByteRef::High(x) => **x = (**x & 0xff) | ((value as u16) << 8),
+    /// Push to stack
+    fn stack_push(&mut self, system: &mut impl System, as_read: bool, byte: Byte) {
+        if as_read {
+            system.read(self.s as u32, AddressType::Data, &self.signals);
+        } else {
+            let byte: u8 = byte.into();
+            system.write(self.s as u32, byte, &self.signals);
+        }
+
+        if !self.aborted {
+            self.s = self.s.wrapping_sub(1);
         }
     }
 
-    /// Swap to the other byte
-    pub fn swap(self) -> Self {
-        match self {
-            ByteRef::Low(x) => ByteRef::High(x),
-            ByteRef::High(x) => ByteRef::Low(x),
+    /// Pop from stack
+    fn stack_pop(&mut self, system: &mut impl System) -> u8 {
+        let x = system.read(self.s as u32, AddressType::Data, &self.signals);
+        if !self.aborted {
+            self.s = self.s.wrapping_sub(1);
         }
+        x
     }
 }

@@ -54,7 +54,8 @@ fn reset() {
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert_eq!(cpu.signals.e, cpu.flags.emulation, "emulation");
     assert_eq!(cpu.signals.e, true, "emulation");
-    assert_eq!(cpu.signals.mx, true, "mx");
+    assert_eq!(cpu.signals.mx(false), true, "mx:m");
+    assert_eq!(cpu.signals.mx(true), true, "mx:x");
     assert_eq!(cpu.flags.mem_sel, true, "m");
     assert_eq!(cpu.flags.index_sel, true, "x");
     assert_eq!(cpu.flags.decimal, false, "d");
@@ -89,7 +90,8 @@ fn init() {
     assert_eq!(cpu.y & 0xffff, 0x0095, "y");
     assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
     assert_eq!(cpu.signals.e, true, "emulation");
-    assert_eq!(cpu.signals.mx, true, "mx");
+    assert_eq!(cpu.signals.mx(false), true, "mx:m");
+    assert_eq!(cpu.signals.mx(true), true, "mx:x");
     assert_eq!(cpu.flags.mem_sel, true, "m");
     assert_eq!(cpu.flags.index_sel, true, "x");
     assert_eq!(cpu.flags.decimal, false, "d");
@@ -116,7 +118,8 @@ fn runs_forever_with_nop() {
     assert_eq!(cpu.x & 0xff00, 0x0000, "x");
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
-    assert_eq!(cpu.signals.mx, true, "mx");
+    assert_eq!(cpu.signals.mx(false), true, "mx:m");
+    assert_eq!(cpu.signals.mx(true), true, "mx:x");
     assert_eq!(cpu.flags.mem_sel, true, "m");
     assert_eq!(cpu.flags.index_sel, true, "x");
     assert_eq!(cpu.flags.decimal, false, "d");
