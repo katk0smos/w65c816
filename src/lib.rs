@@ -1,15 +1,26 @@
 #![no_std]
 
+#[cfg(test)]
+mod tests;
+
 /// Trait that systems should implement.
 /// Any given function will be called once per cycle, but not all functions
 /// will be called every cycle.
 pub trait System {
     fn read(&mut self, addr: u32, addr_type: AddressType, signals: &Signals) -> u8;
     fn write(&mut self, addr: u32, data: u8, signals: &Signals);
-    fn irq(&mut self) -> bool { false }
-    fn nmi(&mut self) -> bool { false }
-    fn res(&mut self) -> bool { false }
-    fn rdy(&mut self) -> bool { true }
+    fn irq(&mut self) -> bool {
+        false
+    }
+    fn nmi(&mut self) -> bool {
+        false
+    }
+    fn res(&mut self) -> bool {
+        false
+    }
+    fn rdy(&mut self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,6 +30,26 @@ pub enum AddressType {
     Program,
     Opcode,
     Vector,
+}
+
+impl AddressType {
+    pub fn into_vda_vpa(&self) -> (bool, bool) {
+        match self {
+            AddressType::Invalid => (false, false),
+            AddressType::Data => (true, false),
+            AddressType::Program => (false, true),
+            AddressType::Opcode => (true, true),
+            AddressType::Vector => (false, false),
+        }
+    }
+
+    pub fn into_vda(&self) -> bool {
+        self.into_vda_vpa().0
+    }
+
+    pub fn into_vpa(&self) -> bool {
+        self.into_vda_vpa().1
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,7 +99,7 @@ impl Signals {
 
     /// Memory Lock (MLB)
     ///
-    /// The Memory Lock active low output may be used to ensure the integrity of 
+    /// The Memory Lock active low output may be used to ensure the integrity of
     /// Read Modify Write instructions in a multiprocessor system. Memory Lock
     /// indicates the need to defer arbitration of the next bus cycle.
     /// Memory Lock is low during the last three or five cycles of ASL, DEC, INC,
@@ -77,7 +108,7 @@ impl Signals {
     pub fn mlb(&self) -> bool {
         self.mlb
     }
-    
+
     /// Memory/Index Select Status (MX)
     ///
     /// The Memory/Index Select Status multiplexed output reflects the state of the Accumulator (M) and Index (X) select flags (bits 5 and 4 of the Processor Status (P)
@@ -139,9 +170,9 @@ impl Flags {
     const MEM_SEL: u8 = 0b00100000;
     const OVERFLOW: u8 = 0b01000000;
     const NEGATIVE: u8 = 0b10000000;
-    
+
     /// Returns the flags as an 8-bit byte, with various options for representation.
-    /// 
+    ///
     /// # Arguments
     /// `xce`: Exchanges the carry bit for the emulation bit if true.
     /// `is_native`: Whether the index select and memory select bits should be
@@ -183,7 +214,7 @@ impl Flags {
             byte |= Self::CARRY;
         }
 
-        if !is_native || (is_native && self.mem_sel) {
+        if !is_native || self.mem_sel {
             byte |= Self::MEM_SEL;
         } else if is_native && self.index_sel {
             byte |= Self::INDEX_SEL;
@@ -201,7 +232,13 @@ enum State {
     Irq,
     Nmi,
     Ld(Register, AddressingMode),
-    NOP,
+    Nop,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum TaggedByte {
+    Data(Byte),
+    Address(Byte),
 }
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -223,36 +260,60 @@ enum AddressingMode {
     #[default]
     Implied,
     Immediate,
+    Absolute,
 }
 
 impl AddressingMode {
-    pub fn read(self, cpu: &mut CPU, system: &mut impl System) -> Option<Byte> {
+    pub fn read(self, cpu: &mut CPU, system: &mut impl System) -> Option<TaggedByte> {
         match self {
             AddressingMode::Immediate => match (cpu.flags.emulation, cpu.tcu) {
-                (true, _) => {
+                (true, 1) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
-                    Some(Byte::Low(value))
+                    Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 1) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
-                    Some(Byte::Low(value))
+                    Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 2) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
-                    Some(Byte::High(value))
+                    Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            }
+            },
             AddressingMode::Implied => {
                 let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
-                Some(Byte::Low(system.read(effective, AddressType::Invalid, &cpu.signals)))
+                Some(TaggedByte::Data(Byte::Low(system.read(
+                    effective,
+                    AddressType::Invalid,
+                    &cpu.signals,
+                ))))
             }
+            AddressingMode::Absolute => match (cpu.flags.emulation, cpu.tcu) {
+                (_, 1) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(TaggedByte::Address(Byte::Low(value)))
+                }
+                (_, 2) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(TaggedByte::Address(Byte::High(value)))
+                }
+                (_, 3) => todo!(),
+                (true, 4) => todo!(),
+                (false, 4) => todo!(),
+                (false, 5) => todo!(),
+                _ => None,
+            },
         }
     }
 }
@@ -294,6 +355,9 @@ pub struct CPU {
     state: State,
     /// Exchange Carry and Emulation status
     xce: bool,
+    /// Temporary register for internal use.
+    /// Used for addressing instructions
+    temp: u16,
 }
 
 impl Default for CPU {
@@ -316,6 +380,7 @@ impl Default for CPU {
             flags: Flags::default(),
             signals: Signals::default(),
             state: State::default(),
+            temp: 0,
         }
     }
 }
@@ -326,12 +391,7 @@ impl CPU {
     }
 
     pub fn cycle(&mut self, system: &mut impl System) {
-        let (rdy, res, nmi, irq) = (
-            self.rdy(system),
-            system.res(),
-            system.nmi(),
-            system.irq(),
-        );
+        let (rdy, res, nmi, irq) = (self.rdy(system), system.res(), system.nmi(), system.irq());
 
         if !rdy && !self.wai && !res {
             return;
@@ -351,43 +411,81 @@ impl CPU {
             cpu.state = State::Fetch;
         }
 
-        fn interrupt(cpu: &mut CPU, system: &mut impl System, vector: u16, store_pc_p: bool, _set_b: bool) {
+        fn interrupt(
+            cpu: &mut CPU,
+            system: &mut impl System,
+            vector: u16,
+            store_pc_p: bool,
+            _set_b: bool,
+        ) {
             let xce = cpu.xce;
 
             match cpu.tcu {
                 3 => {
                     if store_pc_p {
-                        system.write((cpu.dbr as u32) << 16 | (cpu.s as u32), ByteRef::High(&mut cpu.pc).get(), &cpu.signals);
+                        system.write(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            ByteRef::High(&mut cpu.pc).get(),
+                            &cpu.signals,
+                        );
                     } else {
-                        system.read((cpu.dbr as u32) << 16 | (cpu.s as u32), AddressType::Data, &cpu.signals);
+                        system.read(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            AddressType::Data,
+                            &cpu.signals,
+                        );
                     }
 
                     cpu.s = cpu.s.wrapping_sub(1);
                 }
                 4 => {
                     if store_pc_p {
-                        system.write((cpu.dbr as u32) << 16 | (cpu.s as u32), ByteRef::Low(&mut cpu.pc).get(), &cpu.signals);
+                        system.write(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            ByteRef::Low(&mut cpu.pc).get(),
+                            &cpu.signals,
+                        );
                     } else {
-                        system.read((cpu.dbr as u32) << 16 | (cpu.s as u32), AddressType::Data, &cpu.signals);
+                        system.read(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            AddressType::Data,
+                            &cpu.signals,
+                        );
                     }
 
                     cpu.s = cpu.s.wrapping_sub(1);
                 }
                 5 => {
                     if store_pc_p {
-                        system.write((cpu.dbr as u32) << 16 | (cpu.s as u32), cpu.flags.as_byte(xce), &cpu.signals);
+                        system.write(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            cpu.flags.as_byte(xce),
+                            &cpu.signals,
+                        );
                     } else {
-                        system.read((cpu.dbr as u32) << 16 | (cpu.s as u32), AddressType::Data, &cpu.signals);
+                        system.read(
+                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
+                            AddressType::Data,
+                            &cpu.signals,
+                        );
                     }
 
                     cpu.s = cpu.s.wrapping_sub(1);
                 }
                 6 => {
                     cpu.flags.interrupt_disable = true;
-                    ByteRef::Low(&mut cpu.pc).set(system.read(vector as u32, AddressType::Vector, &cpu.signals));
+                    ByteRef::Low(&mut cpu.pc).set(system.read(
+                        vector as u32,
+                        AddressType::Vector,
+                        &cpu.signals,
+                    ));
                 }
                 7 => {
-                    ByteRef::High(&mut cpu.pc).set(system.read(vector.wrapping_add(1) as u32, AddressType::Vector, &cpu.signals));
+                    ByteRef::High(&mut cpu.pc).set(system.read(
+                        vector.wrapping_add(1) as u32,
+                        AddressType::Vector,
+                        &cpu.signals,
+                    ));
                     cpu.state = State::Fetch;
                 }
                 _ => unreachable!(),
@@ -452,10 +550,10 @@ impl CPU {
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
                 self.pc = self.pc.wrapping_add(1);
-        
+
                 match self.ir {
                     0xEA => {
-                        self.state = State::NOP;
+                        self.state = State::Nop;
                         self.tcu = 0;
                     }
                     0xA0 => {
@@ -470,48 +568,95 @@ impl CPU {
                         self.state = State::Ld(Register::A, AddressingMode::Immediate);
                         self.tcu = 0;
                     }
+                    0xAC => {
+                        self.state = State::Ld(Register::Y, AddressingMode::Absolute);
+                        self.tcu = 0;
+                    }
+                    0xAD => {
+                        self.state = State::Ld(Register::A, AddressingMode::Absolute);
+                        self.tcu = 0;
+                    }
+                    0xAE => {
+                        self.state = State::Ld(Register::X, AddressingMode::Absolute);
+                        self.tcu = 0;
+                    }
                     _ => todo!(),
                 }
             }
-            State::NOP => implied(self, system),
-            State::Ld(reg, AddressingMode::Immediate) => 
-                match (self.flags.emulation, self.tcu) {
-                (true, _) => if let Some(Byte::Low(x)) = AddressingMode::Immediate.read(self, system) {
-                    ByteRef::Low(match reg {
-                        Register::A => &mut self.a,
-                        Register::X => &mut self.x,
-                        Register::Y => &mut self.y,
-                        _ => unreachable!(),
-                    }).set(x);
-                    self.flags.zero = x == 0;
-                    self.flags.negative = (x >> 7) != 0;
-                    self.state = State::Fetch;
-                }
-                (false, _) => match AddressingMode::Immediate.read(self, system) {
-                    Some(Byte::Low(x)) => {
+            State::Nop => implied(self, system),
+            State::Ld(reg, AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
+                (true, _) => {
+                    if let Some(TaggedByte::Data(Byte::Low(x))) =
+                        AddressingMode::Immediate.read(self, system)
+                    {
                         ByteRef::Low(match reg {
                             Register::A => &mut self.a,
                             Register::X => &mut self.x,
                             Register::Y => &mut self.y,
                             _ => unreachable!(),
-                        }).set(x);
+                        })
+                        .set(x);
                         self.flags.zero = x == 0;
+                        self.flags.negative = (x >> 7) != 0;
+                        self.state = State::Fetch;
                     }
-                    Some(Byte::High(x)) => {
-                       ByteRef::Low(match reg {
+                }
+                (false, _) => match AddressingMode::Immediate.read(self, system) {
+                    Some(TaggedByte::Data(Byte::Low(x))) => {
+                        ByteRef::Low(match reg {
                             Register::A => &mut self.a,
                             Register::X => &mut self.x,
                             Register::Y => &mut self.y,
                             _ => unreachable!(),
-                        }).set(x);
+                        })
+                        .set(x);
+                        self.flags.zero = x == 0;
+                    }
+                    Some(TaggedByte::Data(Byte::High(x))) => {
+                        ByteRef::Low(match reg {
+                            Register::A => &mut self.a,
+                            Register::X => &mut self.x,
+                            Register::Y => &mut self.y,
+                            _ => unreachable!(),
+                        })
+                        .set(x);
                         self.flags.zero = self.flags.zero && x == 0;
                         self.flags.negative = ((x >> 7) & 1) != 0;
-                    
+
                         self.state = State::Fetch;
                     }
                     _ => (),
-                }
+                },
                 _ => unreachable!("lda #, {:?} in match", (self.flags.emulation, self.tcu)),
+            },
+            State::Ld(reg, AddressingMode::Absolute) => match AddressingMode::Absolute.read(self, system) {
+                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
+                Some(TaggedByte::Address(Byte::High(x))) => {
+                    ByteRef::High(&mut self.temp).set(x)
+                }
+                Some(TaggedByte::Data(Byte::Low(x))) => {
+                    ByteRef::Low(match reg {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                    })
+                    .set(x);
+                        
+                    if self.flags.emulation {
+                        self.state = State::Fetch;
+                    }
+                }
+                Some(TaggedByte::Data(Byte::High(x))) => {
+                    ByteRef::High(match reg {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                    })
+                    .set(x);
+
+                    self.state = State::Fetch;
+                }
+                _ => (),
             }
             _ => todo!("{:?}", self.state),
         }
@@ -532,12 +677,12 @@ impl CPU {
         let mut x = self.x;
         ByteRef::Low(&mut x).get()
     }
-    
+
     /// X Index Register (Low)
     fn xl_mut(&mut self) -> ByteRef {
         ByteRef::Low(&mut self.x)
     }
-    
+
     /// X Index Register (High)
     fn xh(&self) -> u8 {
         let mut x = self.x;
@@ -554,12 +699,12 @@ impl CPU {
         let mut y = self.y;
         ByteRef::Low(&mut y).get()
     }
-    
+
     /// Y Index Register (Low)
     fn yl_mut(&mut self) -> ByteRef {
         ByteRef::Low(&mut self.y)
     }
-    
+
     /// Y Index Register (High)
     fn yh(&self) -> u8 {
         let mut y = self.y;
@@ -576,7 +721,7 @@ impl CPU {
         let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
         let (pc, overflow) = self.pc.overflowing_add(1);
         self.pc = pc;
-        
+
         if inc_bank && overflow {
             self.pbr = self.pbr.wrapping_add(1);
         }
@@ -619,134 +764,5 @@ impl ByteRef<'_> {
             ByteRef::Low(x) => ByteRef::High(x),
             ByteRef::High(x) => ByteRef::Low(x),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct Sys {
-        ram: [u8; 0x10000],
-        res: bool,
-    }
-
-    impl Default for Sys {
-        fn default() -> Self {
-            Self {
-                ram: [0xEA; 0x10000],
-                res: false,
-            }
-        }
-    }
-
-    impl System for Sys {
-        fn read(&mut self, a: u32, at: AddressType, signals: &Signals) -> u8 {
-            self.ram[(a & 0x00ffff) as usize]
-        }
-
-        fn write(&mut self, a: u32, d: u8, signals: &Signals) {
-            self.ram[(a & 0xffffff) as usize] = d;
-        }
-
-        fn res(&mut self) -> bool {
-            let x = self.res;
-
-            if !x {
-                self.res = true;
-            }
-
-            return !x;
-        }
-    }
-
-    #[test]
-    fn reset() {
-        let mut cpu = CPU::new();
-        let mut sys = Sys::default();
-        sys.ram[0xfffc] = 0x00;
-        sys.ram[0xfffd] = 0x80;
-
-        for _ in 0..8 {
-            cpu.cycle(&mut sys);
-        }
-
-        assert_eq!(cpu.pc, 0x8000, "CPU reset improperly");
-        assert_eq!(cpu.dbr, 00, "dbr");
-        assert_eq!(cpu.pbr, 00, "pbr");
-        assert_eq!(cpu.d, 0x0000, "d");
-        assert_eq!(cpu.s & 0xff00, 0x0100, "s");
-        assert_eq!(cpu.x & 0xff00, 0x0000, "x");
-        assert_eq!(cpu.y & 0xff00, 0x0000, "y");
-        assert_eq!(cpu.signals.e, cpu.flags.emulation, "emulation");
-        assert_eq!(cpu.signals.e, true, "emulation");
-        assert_eq!(cpu.signals.mx, true, "mx");
-        assert_eq!(cpu.flags.mem_sel, true, "m");
-        assert_eq!(cpu.flags.index_sel, true, "x");
-        assert_eq!(cpu.flags.decimal, false, "d");
-        assert_eq!(cpu.flags.interrupt_disable, true, "i");
-        assert_eq!(cpu.flags.carry, true, "c");
-    }
-
-    #[test]
-    fn init() {
-        let mut cpu = CPU::new();
-        let mut sys = Sys::default();
-        sys.ram[0xfffc] = 0x00;
-        sys.ram[0xfffd] = 0x80;
-        sys.ram[0x8000] = 0xA9;
-        sys.ram[0x8001] = 0x84;
-        sys.ram[0x8002] = 0xA0;
-        sys.ram[0x8003] = 0x95;
-        sys.ram[0x8004] = 0xA2;
-        sys.ram[0x8005] = 0x23;
-
-        for _ in 0..8+2*3 {
-            cpu.cycle(&mut sys);
-        }
-
-        assert_eq!(cpu.pc, 0x8006, "CPU reset improperly");
-        assert_eq!(cpu.dbr, 00, "dbr");
-        assert_eq!(cpu.pbr, 00, "pbr");
-        assert_eq!(cpu.d, 0x0000, "d");
-        assert_eq!(cpu.s & 0xff00, 0x0100, "s");
-        assert_eq!(cpu.a & 0x00ff, 0x0084, "a");
-        assert_eq!(cpu.x & 0xffff, 0x0023, "x");
-        assert_eq!(cpu.y & 0xffff, 0x0095, "y");
-        assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
-        assert_eq!(cpu.signals.e, true, "emulation");
-        assert_eq!(cpu.signals.mx, true, "mx");
-        assert_eq!(cpu.flags.mem_sel, true, "m");
-        assert_eq!(cpu.flags.index_sel, true, "x");
-        assert_eq!(cpu.flags.decimal, false, "d");
-        assert_eq!(cpu.flags.interrupt_disable, true, "i");
-        assert_eq!(cpu.flags.carry, true, "c");
-        assert_eq!(cpu.flags.zero, false, "z");
-        assert_eq!(cpu.flags.negative, false, "n");
-    }
-
-    #[test]
-    fn runs_forever_with_nop() {
-        let mut cpu = CPU::new();
-        let mut sys = Sys::default();
-
-        for _ in 0..8+0x20000 {
-            cpu.cycle(&mut sys);
-        }
-
-        assert_eq!(cpu.pc, 0xEAEA);
-        assert_eq!(cpu.dbr, 00, "dbr");
-        assert_eq!(cpu.pbr, 00, "pbr");
-        assert_eq!(cpu.d, 0x0000, "d");
-        assert_eq!(cpu.s & 0xff00, 0x0100, "s");
-        assert_eq!(cpu.x & 0xff00, 0x0000, "x");
-        assert_eq!(cpu.y & 0xff00, 0x0000, "y");
-        assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
-        assert_eq!(cpu.signals.mx, true, "mx");
-        assert_eq!(cpu.flags.mem_sel, true, "m");
-        assert_eq!(cpu.flags.index_sel, true, "x");
-        assert_eq!(cpu.flags.decimal, false, "d");
-        assert_eq!(cpu.flags.interrupt_disable, true, "i");
-        assert_eq!(cpu.flags.carry, true, "c");
     }
 }
