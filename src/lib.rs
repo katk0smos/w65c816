@@ -598,6 +598,7 @@ impl CPU {
             State::Nop => implied(self, system),
             State::Xce => {
                 core::mem::swap(&mut self.flags.carry, &mut self.flags.emulation);
+                self.signals.e = self.flags.emulation;
 
                 if self.flags.emulation {
                     self.flags.mem_sel = true;
