@@ -50,6 +50,10 @@ impl AddressType {
     pub fn into_vpa(&self) -> bool {
         self.into_vda_vpa().1
     }
+
+    pub fn into_vpb(&self) -> bool {
+        !matches!(self, AddressType::Vector)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -171,20 +175,8 @@ impl Flags {
     const OVERFLOW: u8 = 0b01000000;
     const NEGATIVE: u8 = 0b10000000;
 
-    /// Returns the flags as an 8-bit byte, with various options for representation.
-    ///
-    /// # Arguments
-    /// `xce`: Exchanges the carry bit for the emulation bit if true.
-    /// `is_native`: Whether the index select and memory select bits should be
-    /// exposed (index replacing brk).
-    ///
-    /// # Returns
-    /// A byte following one of the following patterns:
-    /// `xce = false; is_native = false` => `NV1BDIZC`
-    /// `xce = true; is_native = false` => `NV1BDIZE`
-    /// `xce = false; is_native = true` => `NVMXDIZC`
-    /// `xce = true; is_native = true` => `NVMXDIZE`
-    pub fn as_byte(self, xce: bool) -> u8 {
+    /// Returns the flags as an 8-bit byte
+    pub fn as_byte(self) -> u8 {
         let is_native = !self.emulation;
         let mut byte = 0u8;
 
@@ -208,9 +200,7 @@ impl Flags {
             byte |= Self::NEGATIVE;
         }
 
-        if xce && self.emulation {
-            byte |= Self::EMU;
-        } else if !xce && self.carry {
+        if self.carry {
             byte |= Self::CARRY;
         }
 
@@ -224,6 +214,7 @@ impl Flags {
     }
 }
 
+/// Internal state machine
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
 enum State {
     #[default]
@@ -234,6 +225,7 @@ enum State {
     Ld(Register, AddressingMode),
     Nop,
     Xce,
+    Xba,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -424,10 +416,8 @@ impl CPU {
             system: &mut impl System,
             vector: u16,
             store_pc_p: bool,
-            _set_b: bool,
+            set_b: bool,
         ) {
-            let xce = cpu.xce;
-
             match cpu.tcu {
                 3 => {
                     if store_pc_p {
@@ -464,10 +454,12 @@ impl CPU {
                     cpu.s = cpu.s.wrapping_sub(1);
                 }
                 5 => {
+                    cpu.flags.brk = set_b;
+
                     if store_pc_p {
                         system.write(
                             (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            cpu.flags.as_byte(xce),
+                            cpu.flags.as_byte(),
                             &cpu.signals,
                         );
                     } else {
@@ -588,6 +580,10 @@ impl CPU {
                         self.state = State::Ld(Register::X, AddressingMode::Absolute);
                         self.tcu = 0;
                     }
+                    0xEB => {
+                        self.state = State::Xba;
+                        self.tcu = 0;
+                    }
                     0xFB => {
                         self.state = State::Xce;
                         self.tcu = 0;
@@ -610,7 +606,27 @@ impl CPU {
 
                 implied(self, system);
             }
-            State::Ld(reg, AddressingMode::Immediate) => match self.flags.emulation {
+            State::Xba => {
+                self.signals.mlb = false;
+                AddressingMode::Implied.read(self, system);
+
+                match self.tcu {
+                    1 => {
+                        let b = ByteRef::High(&mut self.a).get();
+                        let a = ByteRef::Low(&mut self.a).get();
+                        ByteRef::High(&mut self.a).set(a);
+                        ByteRef::Low(&mut self.a).set(b);
+                        self.flags.negative = ((b >> 7) & 1) != 0;
+                        self.flags.zero = b != 0;
+                    }
+                    2 => self.state = State::Fetch,
+                    _ => (),
+                }
+            }
+            State::Ld(reg, AddressingMode::Immediate) => match (match reg {
+                Register::A => self.a_width(),
+                Register::X | Register::Y => self.index_width(),
+            }) == 8 {
                 true => {
                     if let Some(TaggedByte::Data(Byte::Low(x))) =
                         AddressingMode::Immediate.read(self, system)
@@ -667,7 +683,10 @@ impl CPU {
                     })
                     .set(x);
 
-                    if self.flags.emulation {
+                    if match reg {
+                        Register::A => self.a_width(),
+                        Register::X | Register::Y => self.index_width(),
+                    } == 8 {
                         self.state = State::Fetch;
                     }
                 }
@@ -756,6 +775,22 @@ impl CPU {
 
     fn absolute_a(&self, _system: &mut impl System, addr: u16) -> u32 {
         ((self.dbr as u32) << 16) | addr as u32
+    }
+
+    /// Returns the width of the accumulator, either 8 or 16
+    fn a_width(&self) -> u8 {
+        match (self.flags.emulation, self.flags.mem_sel) {
+            (true, _) | (false, false) => 8,
+            (false, true) => 16,
+        }   
+    }
+
+    /// Returns the width of index registers, either 8 or 16
+    fn index_width(&self) -> u8 {
+        match (self.flags.emulation, self.flags.index_sel) {
+            (true, _) | (false, false) => 8,
+            (false, true) => 16,
+        }   
     }
 }
 
