@@ -309,7 +309,7 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp.wrapping_add(1) as u32);
+                    let effective = (((cpu.dbr as u32) << 16) | (cpu.temp as u32)).wrapping_add(1);
                     let value = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -554,6 +554,20 @@ impl CPU {
                     _ => interrupt(self, system, 0xfffc, false, false),
                 }
             }
+            State::Nmi => {
+                if self.flags.emulation {
+                    interrupt(self, system, 0x00fffa, true, false);
+                } else {
+                    interrupt(self, system, 0x00ffea, true, false);
+                }
+            }
+            State::Irq => {
+                if self.flags.emulation {
+                    interrupt(self, system, 0x00fffe, true, false);
+                } else {
+                    interrupt(self, system, 0x00ffee, true, false);
+                }
+            }
             State::Abort => {
                 if self.flags.emulation {
                     interrupt(self, system, 0x00fff8, true, false);
@@ -735,6 +749,9 @@ impl CPU {
                             Register::Y => &mut self.y,
                         })
                         .set(x);
+                        
+                        self.flags.zero = x == 0;
+                        self.flags.negative = (x >> 7) != 0;
                     }
 
                     if match reg {
@@ -753,6 +770,9 @@ impl CPU {
                             Register::Y => &mut self.y,
                         })
                         .set(x);
+                        
+                        self.flags.zero = self.flags.zero && x == 0;
+                        self.flags.negative = (x >> 7) != 0;
                     }
 
                     self.state = State::Fetch;
@@ -834,7 +854,7 @@ impl CPU {
     }
 
     /// Push to stack
-    fn stack_push(&mut self, system: &mut impl System, as_read: bool, byte: Byte) {
+    fn stack_push(&mut self, system: &mut impl System, byte: Byte, as_read: bool) {
         if as_read {
             system.read(self.s as u32, AddressType::Data, &self.signals);
         } else {
