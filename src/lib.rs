@@ -281,7 +281,7 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 2) => {
-                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_add(1) as u32);
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
                     Some(TaggedByte::Data(Byte::High(value)))
