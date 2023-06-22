@@ -233,6 +233,7 @@ enum State {
     Nmi,
     Ld(Register, AddressingMode),
     Nop,
+    Xce,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -280,7 +281,7 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 2) => {
-                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_add(1) as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -308,10 +309,16 @@ impl AddressingMode {
                     cpu.pc = cpu.pc.wrapping_add(1);
                     Some(TaggedByte::Address(Byte::High(value)))
                 }
-                (_, 3) => todo!(),
-                (true, 4) => todo!(),
-                (false, 4) => todo!(),
-                (false, 5) => todo!(),
+                (_, 3) => {
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp as u32);
+                    let value = system.read(effective, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(value)))
+                }
+                (false, 4) => {
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp.wrapping_add(1) as u32);
+                    let value = system.read(effective, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(value)))
+                }
                 _ => None,
             },
         }
@@ -402,6 +409,7 @@ impl CPU {
         }
 
         self.tcu += 1;
+        self.signals.rdy = rdy;
 
         fn implied(cpu: &mut CPU, system: &mut impl System) {
             cpu.signals.mlb = false;
@@ -580,12 +588,20 @@ impl CPU {
                         self.state = State::Ld(Register::X, AddressingMode::Absolute);
                         self.tcu = 0;
                     }
+                    0xFB => {
+                        self.state = State::Xce;
+                        self.tcu = 0;
+                    }
                     _ => todo!(),
                 }
             }
             State::Nop => implied(self, system),
-            State::Ld(reg, AddressingMode::Immediate) => match (self.flags.emulation, self.tcu) {
-                (true, _) => {
+            State::Xce => {
+                self.xce = !self.xce;
+                implied(self, system);
+            }
+            State::Ld(reg, AddressingMode::Immediate) => match self.flags.emulation {
+                true => {
                     if let Some(TaggedByte::Data(Byte::Low(x))) =
                         AddressingMode::Immediate.read(self, system)
                     {
@@ -601,7 +617,7 @@ impl CPU {
                         self.state = State::Fetch;
                     }
                 }
-                (false, _) => match AddressingMode::Immediate.read(self, system) {
+                false => match AddressingMode::Immediate.read(self, system) {
                     Some(TaggedByte::Data(Byte::Low(x))) => {
                         ByteRef::Low(match reg {
                             Register::A => &mut self.a,
@@ -627,13 +643,12 @@ impl CPU {
                     }
                     _ => (),
                 },
-                _ => unreachable!("lda #, {:?} in match", (self.flags.emulation, self.tcu)),
             },
-            State::Ld(reg, AddressingMode::Absolute) => match AddressingMode::Absolute.read(self, system) {
+            State::Ld(reg, AddressingMode::Absolute) => match AddressingMode::Absolute
+                .read(self, system)
+            {
                 Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
-                Some(TaggedByte::Address(Byte::High(x))) => {
-                    ByteRef::High(&mut self.temp).set(x)
-                }
+                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
                 Some(TaggedByte::Data(Byte::Low(x))) => {
                     ByteRef::Low(match reg {
                         Register::A => &mut self.a,
@@ -641,7 +656,7 @@ impl CPU {
                         Register::Y => &mut self.y,
                     })
                     .set(x);
-                        
+
                     if self.flags.emulation {
                         self.state = State::Fetch;
                     }
@@ -657,7 +672,7 @@ impl CPU {
                     self.state = State::Fetch;
                 }
                 _ => (),
-            }
+            },
             _ => todo!("{:?}", self.state),
         }
     }
