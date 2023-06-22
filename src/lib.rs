@@ -597,7 +597,18 @@ impl CPU {
             }
             State::Nop => implied(self, system),
             State::Xce => {
-                self.xce = !self.xce;
+                let temp = self.flags.emulation;
+                self.flags.emulation = self.flags.carry;
+                self.flags.carry = temp;
+
+                if self.flags.emulation {
+                    self.flags.mem_sel = true;
+                    self.flags.index_sel = true;
+                    ByteRef::High(&mut self.s).set(0x01);
+                    ByteRef::High(&mut self.x).set(0);
+                    ByteRef::High(&mut self.y).set(0);
+                }
+
                 implied(self, system);
             }
             State::Ld(reg, AddressingMode::Immediate) => match self.flags.emulation {
