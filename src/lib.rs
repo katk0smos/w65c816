@@ -24,6 +24,10 @@ pub trait System {
     fn rdy(&mut self) -> bool {
         true
     }
+
+    /// Abort
+    ///
+    /// The Abort pulse active input is used to abort instructions (usually due to an Address Bus condition). A return value of true will inhibit modification of any internal register during the current instruction. Upon completion of this instruction, an interrupt sequence is initiated. The location of the aborted opcode is stored as the return address in stack memory. The Abort vector address is 00FFF8,9 (Emulation mode) or 00FFE8,9 (Native mode). Note that ABORT is a pulse sensitive signal; i.e., an abort will occur whenever true is returned.
     fn abort(&mut self) -> bool {
         false
     }
