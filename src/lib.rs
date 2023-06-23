@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 #[cfg(test)]
 mod tests;
@@ -137,6 +137,14 @@ impl Signals {
         } else {
             self.x
         }
+    }
+
+    pub fn m(&self) -> bool {
+        self.m
+    }
+
+    pub fn x(&self) -> bool {
+        self.x
     }
 
     /// Ready (RDY)
@@ -329,6 +337,7 @@ enum State {
     Nmi,
     Abort,
     Ld(Register, AddressingMode),
+    Carry(bool),
     Nop,
     Xce,
     Xba,
@@ -600,48 +609,28 @@ impl CPU {
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
                 self.pc = self.pc.wrapping_add(1);
+                self.tcu = 0;
 
-                match self.ir {
-                    0xEA => {
-                        self.state = State::Nop;
-                        self.tcu = 0;
-                    }
-                    0xA0 => {
-                        self.state = State::Ld(Register::Y, AddressingMode::Immediate);
-                        self.tcu = 0;
-                    }
-                    0xA2 => {
-                        self.state = State::Ld(Register::X, AddressingMode::Immediate);
-                        self.tcu = 0;
-                    }
-                    0xA9 => {
-                        self.state = State::Ld(Register::A, AddressingMode::Immediate);
-                        self.tcu = 0;
-                    }
-                    0xAC => {
-                        self.state = State::Ld(Register::Y, AddressingMode::Absolute);
-                        self.tcu = 0;
-                    }
-                    0xAD => {
-                        self.state = State::Ld(Register::A, AddressingMode::Absolute);
-                        self.tcu = 0;
-                    }
-                    0xAE => {
-                        self.state = State::Ld(Register::X, AddressingMode::Absolute);
-                        self.tcu = 0;
-                    }
-                    0xEB => {
-                        self.state = State::Xba;
-                        self.tcu = 0;
-                    }
-                    0xFB => {
-                        self.state = State::Xce;
-                        self.tcu = 0;
-                    }
+                self.state = match self.ir {
+                    0x18 => State::Carry(false),
+                    0x38 => State::Carry(true),
+                    0xEA => State::Nop,
+                    0xA0 => State::Ld(Register::Y, AddressingMode::Immediate),
+                    0xA2 => State::Ld(Register::X, AddressingMode::Immediate),
+                    0xA9 => State::Ld(Register::A, AddressingMode::Immediate),
+                    0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
+                    0xAD => State::Ld(Register::A, AddressingMode::Absolute),
+                    0xAE => State::Ld(Register::X, AddressingMode::Absolute),
+                    0xEB => State::Xba,
+                    0xFB => State::Xce,
                     _ => todo!(),
                 }
             }
             State::Nop => implied(self, system),
+            State::Carry(state) => {
+                self.flags.carry = state;
+                implied(self, system);
+            }
             State::Xce => {
                 if !self.aborted {
                     core::mem::swap(&mut self.flags.carry, &mut self.flags.emulation);
@@ -664,19 +653,18 @@ impl CPU {
                 self.signals.mlb = false;
                 AddressingMode::Implied.read(self, system);
 
-                match self.tcu {
-                    1 => {
-                        if !self.aborted {
-                            let b = ByteRef::High(&mut self.a).get();
-                            let a = ByteRef::Low(&mut self.a).get();
-                            ByteRef::High(&mut self.a).set(a);
-                            ByteRef::Low(&mut self.a).set(b);
-                            self.flags.negative = ((b >> 7) & 1) != 0;
-                            self.flags.zero = b != 0;
-                        }
+                if self.tcu == 2 {
+                    if !self.aborted {
+                        let b = ByteRef::High(&mut self.a).get();
+                        let a = ByteRef::Low(&mut self.a).get();
+                        ByteRef::High(&mut self.a).set(a);
+                        ByteRef::Low(&mut self.a).set(b);
+                        
+                        self.flags.negative = ((b >> 7) & 1) != 0;
+                        self.flags.zero = b != 0;
                     }
-                    2 => self.state = State::Fetch,
-                    _ => (),
+
+                    self.state = State::Fetch;
                 }
             }
             State::Ld(reg, AddressingMode::Immediate) => match (match reg {
@@ -791,50 +779,6 @@ impl CPU {
     /// Signals
     pub fn signals(&self) -> &Signals {
         &self.signals
-    }
-
-    /// X Index Register (Low)
-    fn xl(&self) -> u8 {
-        let mut x = self.x;
-        ByteRef::Low(&mut x).get()
-    }
-
-    /// X Index Register (Low)
-    fn xl_mut(&mut self) -> ByteRef {
-        ByteRef::Low(&mut self.x)
-    }
-
-    /// X Index Register (High)
-    fn xh(&self) -> u8 {
-        let mut x = self.x;
-        ByteRef::High(&mut x).get()
-    }
-
-    /// X Index Register (High)
-    fn xh_mut(&mut self) -> ByteRef {
-        ByteRef::High(&mut self.x)
-    }
-
-    /// Y Index Register (Low)
-    fn yl(&self) -> u8 {
-        let mut y = self.y;
-        ByteRef::Low(&mut y).get()
-    }
-
-    /// Y Index Register (Low)
-    fn yl_mut(&mut self) -> ByteRef {
-        ByteRef::Low(&mut self.y)
-    }
-
-    /// Y Index Register (High)
-    fn yh(&self) -> u8 {
-        let mut y = self.y;
-        ByteRef::High(&mut y).get()
-    }
-
-    /// Y Index Register (High)
-    fn yh_mut(&mut self) -> ByteRef {
-        ByteRef::High(&mut self.y)
     }
 
     /// Returns the width of the accumulator, either 8 or 16

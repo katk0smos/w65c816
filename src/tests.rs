@@ -126,3 +126,47 @@ fn runs_forever_with_nop() {
     assert_eq!(cpu.flags.interrupt_disable, true, "i");
     assert_eq!(cpu.flags.carry, true, "c");
 }
+
+#[test]
+fn lda() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+
+    sys.ram[0x4000] = 12;
+    sys.ram[0x4001] = 34;
+
+    sys.ram[0x8000..0x8000+12].copy_from_slice(&[
+        0xA9, 0x00, // LDA #$00
+        0xA0, 0x00, // LDX #$00
+        0xA2, 0x00, // LDY #$00
+        0x18, // CLC
+        0xFB, // XCE
+        0xAD, 0x00, 0x40, // LDA $4000
+        0x38, // SEC
+    ]);
+
+    for _ in 0..8+2*6+5 {
+        cpu.cycle(&mut sys);
+        println!("{:?}", cpu.state);
+    }
+
+    assert_eq!(cpu.pc, 0x800c);
+    assert_eq!(cpu.dbr, 00, "dbr");
+    assert_eq!(cpu.pbr, 00, "pbr");
+    assert_eq!(cpu.d, 0x0000, "d");
+    assert_eq!(cpu.s & 0xff00, 0x0100, "s");
+    assert_eq!(cpu.a, 0x220c, "a");
+    assert_eq!(cpu.x & 0xff00, 0x0000, "x");
+    assert_eq!(cpu.y & 0xff00, 0x0000, "y");
+    assert!(!(cpu.signals.e && cpu.flags.emulation), "emulation");
+    assert_eq!(cpu.signals.mx(false), true, "mx:m");
+    assert_eq!(cpu.signals.mx(true), true, "mx:x");
+    assert_eq!(cpu.flags.mem_sel, true, "m");
+    assert_eq!(cpu.flags.index_sel, true, "x");
+    assert_eq!(cpu.flags.decimal, false, "d");
+    assert_eq!(cpu.flags.interrupt_disable, true, "i");
+    assert_eq!(cpu.flags.carry, true, "c");
+    assert_eq!(cpu.flags.zero, false, "z");
+}
