@@ -209,7 +209,7 @@ impl Flags {
         }
 
         if self.interrupt_disable {
-            byte |= Self::ZERO;
+            byte |= Self::IRQ_DISABLE;
         }
 
         if self.decimal {
@@ -235,26 +235,6 @@ impl Flags {
         }
 
         byte
-    }
-}
-
-#[derive(Clone, Debug, Copy, PartialEq)]
-pub enum TaggedByte {
-    Data(Byte),
-    Address(Byte),
-}
-
-#[derive(Clone, Debug, Copy, PartialEq)]
-pub enum Byte {
-    Low(u8),
-    High(u8),
-}
-
-impl From<Byte> for u8 {
-    fn from(x: Byte) -> u8 {
-        match x {
-            Byte::Low(x) | Byte::High(x) => x,
-        }
     }
 }
 
@@ -323,6 +303,39 @@ impl AddressingMode {
                 }
                 _ => None,
             },
+        }
+    }
+
+    pub fn write(self, cpu: &mut CPU, system: &mut impl System, mut value: u16) -> Option<TaggedByte> {
+        match self {
+            AddressingMode::Absolute => match (cpu.flags.emulation, cpu.tcu) {
+                (_, 1) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(TaggedByte::Address(Byte::Low(value)))
+                }
+                (_, 2) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    Some(TaggedByte::Address(Byte::High(value)))
+                }
+                (_, 3) => {
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp as u32);
+                    let value = ByteRef::Low(&mut value).get();
+                    system.write(effective, value, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(value)))
+                }
+                (false, 4) => {
+                    let effective = (((cpu.dbr as u32) << 16) | (cpu.temp as u32)).wrapping_add(1);
+                    let value = ByteRef::High(&mut value).get();
+                    system.write(effective, value, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(value)))
+                }
+                _ => None,
+            }
+            AddressingMode::Implied | AddressingMode::Immediate => None,
         }
     }
 }
