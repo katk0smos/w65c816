@@ -244,6 +244,7 @@ enum AddressingMode {
     Implied,
     Immediate,
     Absolute,
+    Direct,
 }
 
 impl AddressingMode {
@@ -302,7 +303,33 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            },
+            }
+            AddressingMode::Direct => match (cpu.flags.emulation, cpu.tcu, ByteRef::Low(&mut cpu.d).get() == 0) {
+                (_, 1, _) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let offset = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+
+                    Some(TaggedByte::Address(Byte::Low(offset)))
+                }
+                (_, 2, false) if cpu.d != 0 => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                    system.read(effective, AddressType::Invalid, &cpu.signals);
+                    None
+                }
+                (_, 2, true) | (_, 3, false) => {
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let value = system.read(addr, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(value)))
+                }
+                (false, 3, true) | (false, 4, false) => {
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let value = system.read(addr, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(value)))
+                }
+                _ => None,
+            }
+            _ => todo!(),
         }
     }
 
@@ -335,7 +362,35 @@ impl AddressingMode {
                 }
                 _ => None,
             }
+            AddressingMode::Direct => match (cpu.flags.emulation, cpu.tcu, ByteRef::Low(&mut cpu.d).get() == 0) {
+                (_, 1, _) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let offset = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+
+                    Some(TaggedByte::Address(Byte::Low(offset)))
+                }
+                (_, 2, false) => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                    system.read(effective, AddressType::Invalid, &cpu.signals);
+                    None
+                }
+                (_, 2, true) | (_, 3, false) => {
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let value = ByteRef::Low(&mut value).get();
+                    system.write(addr, value, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(value)))
+                }
+                (false, 3, true) | (false, 4, false) => {
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let value = ByteRef::High(&mut value).get();
+                    system.write(addr, value, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(value)))
+                }
+                _ => None,
+            }
             AddressingMode::Implied | AddressingMode::Immediate => None,
+            _ => todo!(),
         }
     }
 }
@@ -350,6 +405,7 @@ enum State {
     Nmi,
     Abort,
     Ld(Register, AddressingMode),
+    St(Register, AddressingMode),
     Carry(bool),
     Nop,
     Xce,
@@ -627,9 +683,18 @@ impl CPU {
                 self.state = match self.ir {
                     0x18 => State::Carry(false),
                     0x38 => State::Carry(true),
+                    0x84 => State::St(Register::Y, AddressingMode::Direct),
+                    0x85 => State::St(Register::A, AddressingMode::Direct),
+                    0x86 => State::St(Register::X, AddressingMode::Direct),
+                    0x8C => State::St(Register::Y, AddressingMode::Absolute),
+                    0x8D => State::St(Register::A, AddressingMode::Absolute),
+                    0x8E => State::St(Register::X, AddressingMode::Absolute),
                     0xEA => State::Nop,
                     0xA0 => State::Ld(Register::Y, AddressingMode::Immediate),
                     0xA2 => State::Ld(Register::X, AddressingMode::Immediate),
+                    0xA4 => State::Ld(Register::Y, AddressingMode::Direct),
+                    0xA5 => State::Ld(Register::A, AddressingMode::Direct),
+                    0xA6 => State::Ld(Register::X, AddressingMode::Direct),
                     0xA9 => State::Ld(Register::A, AddressingMode::Immediate),
                     0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
@@ -680,66 +745,7 @@ impl CPU {
                     self.state = State::Fetch;
                 }
             }
-            State::Ld(reg, AddressingMode::Immediate) => match (match reg {
-                Register::A => self.a_width(),
-                Register::X | Register::Y => self.index_width(),
-            }) == 8
-            {
-                true => {
-                    if let Some(TaggedByte::Data(Byte::Low(x))) =
-                        AddressingMode::Immediate.read(self, system)
-                    {
-                        if !self.aborted {
-                            ByteRef::Low(match reg {
-                                Register::A => &mut self.a,
-                                Register::X => &mut self.x,
-                                Register::Y => &mut self.y,
-                                _ => unreachable!(),
-                            })
-                            .set(x);
-
-                            self.flags.zero = x == 0;
-                            self.flags.negative = (x >> 7) != 0;
-                        }
-                        self.state = State::Fetch;
-                    }
-                }
-                false => match AddressingMode::Immediate.read(self, system) {
-                    Some(TaggedByte::Data(Byte::Low(x))) => {
-                        if !self.aborted {
-                            ByteRef::Low(match reg {
-                                Register::A => &mut self.a,
-                                Register::X => &mut self.x,
-                                Register::Y => &mut self.y,
-                                _ => unreachable!(),
-                            })
-                            .set(x);
-
-                            self.flags.zero = x == 0;
-                        }
-                    }
-                    Some(TaggedByte::Data(Byte::High(x))) => {
-                        if !self.aborted {
-                            ByteRef::Low(match reg {
-                                Register::A => &mut self.a,
-                                Register::X => &mut self.x,
-                                Register::Y => &mut self.y,
-                                _ => unreachable!(),
-                            })
-                            .set(x);
-
-                            self.flags.zero = self.flags.zero && x == 0;
-                            self.flags.negative = ((x >> 7) & 1) != 0;
-                        }
-
-                        self.state = State::Fetch;
-                    }
-                    _ => (),
-                },
-            },
-            State::Ld(reg, AddressingMode::Absolute) => match AddressingMode::Absolute
-                .read(self, system)
-            {
+            State::Ld(reg, addr_mode) => match addr_mode.read(self, system) {
                 Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
                 Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
                 Some(TaggedByte::Data(Byte::Low(x))) => {
@@ -780,6 +786,24 @@ impl CPU {
                 }
                 _ => (),
             },
+            State::St(reg, addr_mode) => match addr_mode.write(self, system, match reg {
+                Register::A => self.a,
+                Register::X => self.x,
+                Register::Y => self.y,
+            }) {
+                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
+                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
+                Some(TaggedByte::Data(Byte::Low(x))) => if match reg {
+                    Register::A => self.a_width(),
+                    Register::X | Register::Y => self.index_width(),
+                } == 8 {
+                    self.state = State::Fetch;
+                }
+                Some(TaggedByte::Data(Byte::High(_))) => {
+                    self.state = State::Fetch;
+                }
+                _ => (),
+            }
             _ => todo!("{:?}", self.state),
         }
     }
