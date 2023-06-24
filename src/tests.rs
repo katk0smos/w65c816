@@ -15,11 +15,11 @@ impl Default for Sys {
 }
 
 impl System for Sys {
-    fn read(&mut self, a: u32, at: AddressType, signals: &Signals) -> u8 {
+    fn read(&mut self, a: u32, _at: AddressType, _signals: &Signals) -> u8 {
         self.ram[(a & 0x00ffff) as usize]
     }
 
-    fn write(&mut self, a: u32, d: u8, signals: &Signals) {
+    fn write(&mut self, a: u32, d: u8, _signals: &Signals) {
         self.ram[(a & 0xffffff) as usize] = d;
     }
 
@@ -30,7 +30,7 @@ impl System for Sys {
             self.res = true;
         }
 
-        return !x;
+        !x
     }
 }
 
@@ -53,14 +53,14 @@ fn reset() {
     assert_eq!(cpu.x & 0xff00, 0x0000, "x");
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert_eq!(cpu.signals.e, cpu.flags.emulation, "emulation");
-    assert_eq!(cpu.signals.e, true, "emulation");
-    assert_eq!(cpu.signals.mx(false), true, "mx:m");
-    assert_eq!(cpu.signals.mx(true), true, "mx:x");
-    assert_eq!(cpu.flags.mem_sel, true, "m");
-    assert_eq!(cpu.flags.index_sel, true, "x");
-    assert_eq!(cpu.flags.decimal, false, "d");
-    assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, true, "c");
+    assert!(cpu.signals.e, "emulation");
+    assert!(cpu.signals.mx(false), "mx:m");
+    assert!(cpu.signals.mx(true), "mx:x");
+    assert!(cpu.flags.mem_sel, "m");
+    assert!(cpu.flags.index_sel, "x");
+    assert!(!cpu.flags.decimal, "d");
+    assert!(cpu.flags.interrupt_disable, "i");
+    assert!(cpu.flags.carry, "c");
 }
 
 #[test]
@@ -86,19 +86,19 @@ fn init() {
     assert_eq!(cpu.d, 0x0000, "d");
     assert_eq!(cpu.s & 0xff00, 0x0100, "s");
     assert_eq!(cpu.a & 0x00ff, 0x0084, "a");
-    assert_eq!(cpu.x & 0xffff, 0x0023, "x");
-    assert_eq!(cpu.y & 0xffff, 0x0095, "y");
+    assert_eq!(cpu.x, 0x0023, "x");
+    assert_eq!(cpu.y, 0x0095, "y");
     assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
-    assert_eq!(cpu.signals.e, true, "emulation");
-    assert_eq!(cpu.signals.mx(false), true, "mx:m");
-    assert_eq!(cpu.signals.mx(true), true, "mx:x");
-    assert_eq!(cpu.flags.mem_sel, true, "m");
-    assert_eq!(cpu.flags.index_sel, true, "x");
-    assert_eq!(cpu.flags.decimal, false, "d");
-    assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, true, "c");
-    assert_eq!(cpu.flags.zero, false, "z");
-    assert_eq!(cpu.flags.negative, false, "n");
+    assert!(cpu.signals.e, "emulation");
+    assert!(cpu.signals.mx(false), "mx:m");
+    assert!(cpu.signals.mx(true), "mx:x");
+    assert!(cpu.flags.mem_sel, "m");
+    assert!(cpu.flags.index_sel, "x");
+    assert!(!cpu.flags.decimal, "d");
+    assert!(cpu.flags.interrupt_disable, "i");
+    assert!(cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(!cpu.flags.negative, "n");
 }
 
 #[test]
@@ -118,13 +118,13 @@ fn runs_forever_with_nop() {
     assert_eq!(cpu.x & 0xff00, 0x0000, "x");
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert!(cpu.signals.e && cpu.flags.emulation, "emulation");
-    assert_eq!(cpu.signals.mx(false), true, "mx:m");
-    assert_eq!(cpu.signals.mx(true), true, "mx:x");
-    assert_eq!(cpu.flags.mem_sel, true, "m");
-    assert_eq!(cpu.flags.index_sel, true, "x");
-    assert_eq!(cpu.flags.decimal, false, "d");
-    assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, true, "c");
+    assert!(cpu.signals.mx(false), "mx:m");
+    assert!(cpu.signals.mx(true), "mx:x");
+    assert!(cpu.flags.mem_sel, "m");
+    assert!(cpu.flags.index_sel, "x");
+    assert!(!cpu.flags.decimal, "d");
+    assert!(cpu.flags.interrupt_disable, "i");
+    assert!(cpu.flags.carry, "c");
 }
 
 #[test]
@@ -164,14 +164,14 @@ fn lda() {
     assert_eq!(cpu.x & 0xff00, 0x0000, "x");
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert!(!(cpu.signals.e && cpu.flags.emulation), "emulation");
-    assert_eq!(cpu.signals.mx(false), false, "mx:m");
-    assert_eq!(cpu.signals.mx(true), false, "mx:x");
-    assert_eq!(cpu.flags.mem_sel, false, "m");
-    assert_eq!(cpu.flags.index_sel, false, "x");
-    assert_eq!(cpu.flags.decimal, false, "d");
-    assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, false, "c");
-    assert_eq!(cpu.flags.zero, false, "z");
+    assert!(!cpu.signals.mx(false), "mx:m");
+    assert!(!cpu.signals.mx(true), "mx:x");
+    assert!(!cpu.flags.mem_sel, "m");
+    assert!(!cpu.flags.index_sel, "x");
+    assert!(!cpu.flags.decimal, "d");
+    assert!(cpu.flags.interrupt_disable, "i");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
 }
 
 #[test]
@@ -213,12 +213,12 @@ fn st_zp() {
     assert_eq!(cpu.x & 0xff00, 0x0000, "x");
     assert_eq!(cpu.y & 0xff00, 0x0000, "y");
     assert!(!(cpu.signals.e && cpu.flags.emulation), "emulation");
-    assert_eq!(cpu.signals.mx(false), true, "mx:m");
-    assert_eq!(cpu.signals.mx(true), true, "mx:x");
-    assert_eq!(cpu.flags.mem_sel, true, "m");
-    assert_eq!(cpu.flags.index_sel, true, "x");
-    assert_eq!(cpu.flags.decimal, false, "d");
-    assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, false, "c");
-    assert_eq!(cpu.flags.zero, false, "z");
+    assert!(cpu.signals.mx(false), "mx:m");
+    assert!(cpu.signals.mx(true), "mx:x");
+    assert!(cpu.flags.mem_sel, "m");
+    assert!(cpu.flags.index_sel, "x");
+    assert!(!cpu.flags.decimal, "d");
+    assert!(cpu.flags.interrupt_disable, "i");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
 }

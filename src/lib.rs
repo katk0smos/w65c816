@@ -851,9 +851,7 @@ impl CPU {
                     {
                         ByteRef::Low(&mut self.temp).set(x);
                     }
-                }
-
-                if self.tcu == 2 {
+                } else if self.tcu == 2 {
                     if !self.aborted {
                         self.flags.set_mask(ByteRef::Low(&mut self.temp).get(), set);
                         self.signals.m = self.flags.mem_sel;
@@ -915,7 +913,7 @@ impl CPU {
             ) {
                 Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
                 Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
-                Some(TaggedByte::Data(Byte::Low(x))) => {
+                Some(TaggedByte::Data(Byte::Low(_x))) => {
                     if match reg {
                         Register::A => self.a_width(),
                         Register::X | Register::Y => self.index_width(),
