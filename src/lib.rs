@@ -227,7 +227,7 @@ impl Flags {
         if self.carry {
             byte |= Self::CARRY;
         }
-        
+
         if !is_native || self.mem_sel {
             byte |= Self::MEM_SEL;
         }
