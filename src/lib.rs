@@ -468,6 +468,9 @@ enum State {
     Nop,
     Xce,
     Xba,
+    Transfer(Register, Register),
+    Txs,
+    Tsx,
     Tcd,
     Tcs,
     Tdc,
@@ -762,18 +765,26 @@ impl CPU {
                     0x84 => State::St(Register::Y, AddressingMode::Direct),
                     0x85 => State::St(Register::A, AddressingMode::Direct),
                     0x86 => State::St(Register::X, AddressingMode::Direct),
+                    0x8A => State::Transfer(Register::X, Register::A),
                     0x8C => State::St(Register::Y, AddressingMode::Absolute),
                     0x8D => State::St(Register::A, AddressingMode::Absolute),
                     0x8E => State::St(Register::X, AddressingMode::Absolute),
+                    0x98 => State::Transfer(Register::Y, Register::A),
+                    0x9A => State::Txs,
+                    0x9B => State::Transfer(Register::X, Register::Y),
                     0xA0 => State::Ld(Register::Y, AddressingMode::Immediate),
                     0xA2 => State::Ld(Register::X, AddressingMode::Immediate),
                     0xA4 => State::Ld(Register::Y, AddressingMode::Direct),
                     0xA5 => State::Ld(Register::A, AddressingMode::Direct),
                     0xA6 => State::Ld(Register::X, AddressingMode::Direct),
+                    0xA8 => State::Transfer(Register::A, Register::Y),
                     0xA9 => State::Ld(Register::A, AddressingMode::Immediate),
+                    0xAA => State::Transfer(Register::A, Register::X),
                     0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
                     0xAE => State::Ld(Register::X, AddressingMode::Absolute),
+                    0xBA => State::Tsx,
+                    0xBB => State::Transfer(Register::Y, Register::X),
                     0xC2 => State::Sep(false),
                     0xCB => State::Wai,
                     0xDB => State::Stp,
@@ -845,6 +856,62 @@ impl CPU {
 
                     self.state = State::Fetch;
                 }
+            }
+            State::Transfer(src, dest) => {
+                if !self.aborted {
+                    let src = match src {
+                        Register::A => self.a,
+                        Register::X => self.x,
+                        Register::Y => self.y,
+                    };
+
+                    let (dest_size, dest) = match dest {
+                        Register::A => (self.a_width(), &mut self.a),
+                        Register::X => (self.index_width(), &mut self.x),
+                        Register::Y => (self.index_width(), &mut self.y),
+                    };
+
+                    if dest_size == 16 {
+                        *dest = src;
+                        self.flags.zero = src == 0;
+                        self.flags.negative = (src >> 15) & 1 != 0;
+                    } else if dest_size == 8 {
+                        let mut src = src;
+                        let src = ByteRef::Low(&mut src).get();
+                        ByteRef::Low(dest).set(src);
+                        self.flags.zero = src == 0;
+                        self.flags.negative = (src >> 7) & 1 != 0;
+                    }
+                }
+
+                implied(self, system);
+            }
+            State::Txs => {
+                if !self.aborted {
+                    self.s = self.x;
+                }
+
+                implied(self, system);
+            }
+            State::Tsx => {
+                if !self.aborted {
+                    match self.index_width() {
+                        8 => {
+                            let value = ByteRef::Low(&mut self.s).get();
+                            ByteRef::Low(&mut self.x).set(value);
+                            self.flags.zero = value == 0;
+                            self.flags.negative = (value >> 7) & 1 != 0;
+                        }
+                        16 => {
+                            self.x = self.s;
+                            self.flags.zero = self.x == 0;
+                            self.flags.negative = (self.x >> 15) & 1 != 0;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                implied(self, system);
             }
             State::Tcd => {
                 if !self.aborted {
