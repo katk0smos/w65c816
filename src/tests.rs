@@ -150,10 +150,7 @@ fn lda() {
 
     for i in 0..8 + 20 {
         cpu.cycle(&mut sys);
-        println!("{} {:?}", i, cpu.state);
     }
-
-    println!("{:#?}", cpu);
 
     assert_eq!(cpu.pc, 0x800e);
     assert_eq!(cpu.dbr, 00, "dbr");
@@ -199,7 +196,6 @@ fn st_zp() {
 
     for _ in 0..8 + 9 + 5 + 2 + 4 + 2 {
         cpu.cycle(&mut sys);
-        println!("{:?}", cpu.state);
     }
 
     assert_eq!(cpu.pc, 0x8000 + CODE.len() as u16);
