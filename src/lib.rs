@@ -227,9 +227,13 @@ impl Flags {
         if self.carry {
             byte |= Self::CARRY;
         }
-
+        
         if !is_native || self.mem_sel {
             byte |= Self::MEM_SEL;
+        }
+
+        if !is_native && self.brk {
+            byte |= Self::BRK_BIT;
         } else if is_native && self.index_sel {
             byte |= Self::INDEX_SEL;
         }
@@ -252,6 +256,10 @@ impl Flags {
 
         if mask & 8 != 0 {
             self.decimal = set;
+        }
+
+        if self.emulation && mask & 16 != 0 {
+            self.brk = set;
         }
 
         if mask & 0x80 != 0 {
