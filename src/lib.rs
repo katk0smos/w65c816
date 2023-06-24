@@ -258,10 +258,6 @@ impl Flags {
             self.decimal = set;
         }
 
-        if self.emulation && mask & 16 != 0 {
-            self.brk = set;
-        }
-
         if mask & 0x80 != 0 {
             self.negative = set;
         }
@@ -270,7 +266,11 @@ impl Flags {
             self.overflow = set;
         }
 
-        if !self.emulation {
+        if self.emulation {
+            if mask & 0x10 != 0 {
+                self.brk = set;
+            }
+        } else {
             if mask & 0x20 != 0 {
                 self.mem_sel = set;
             }
