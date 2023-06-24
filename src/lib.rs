@@ -731,9 +731,10 @@ impl CPU {
                     self.state = State::Nmi;
                     return;
                 } else if irq {
+                    let had_wai = self.wai;
                     self.wai = false;
 
-                    if !self.flags.interrupt_disable {
+                    if !had_wai || !self.flags.interrupt_disable {
                         self.ir = 0x00;
                         self.state = State::Irq;
                         return;
