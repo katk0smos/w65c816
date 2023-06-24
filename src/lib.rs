@@ -846,10 +846,11 @@ impl CPU {
             }
             State::Sep(set) => {
                 if self.tcu == 1 {
-                    match AddressingMode::Immediate.read(self, system) {
-                        Some(TaggedByte::Data(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
-                        _ => (),
-                    };
+                    if let Some(TaggedByte::Data(Byte::Low(x))) =
+                        AddressingMode::Immediate.read(self, system)
+                    {
+                        ByteRef::Low(&mut self.temp).set(x);
+                    }
                 }
 
                 if self.tcu == 2 {
