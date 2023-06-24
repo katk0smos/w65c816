@@ -281,7 +281,7 @@ fn wai_irq_i_special_behavior() {
 
     sys.ram[0x8000..0x8000 + CODE.len()].copy_from_slice(CODE);
 
-    for _ in 0..8+2+5 {
+    for _ in 0..8 + 2 + 5 {
         cpu.cycle(&mut sys);
     }
 
