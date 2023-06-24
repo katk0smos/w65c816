@@ -137,7 +137,7 @@ fn lda() {
     sys.ram[0x4000] = 12;
     sys.ram[0x4001] = 34;
 
-    sys.ram[0x8000..0x8000+14].copy_from_slice(&[
+    sys.ram[0x8000..0x8000 + 14].copy_from_slice(&[
         0xA9, 0x00, // LDA #$00
         0xA0, 0x00, // LDX #$00
         0xA2, 0x00, // LDY #$00
@@ -148,7 +148,7 @@ fn lda() {
         0xAD, 0x00, 0x40, // LDA $4000
     ]);
 
-    for i in 0..8+20 {
+    for i in 0..8 + 20 {
         cpu.cycle(&mut sys);
         println!("{} {:?}", i, cpu.state);
     }
@@ -195,14 +195,14 @@ fn st_zp() {
         0x85, 0, // STA $00
     ];
 
-    sys.ram[0x8000..0x8000+CODE.len()].copy_from_slice(CODE);
+    sys.ram[0x8000..0x8000 + CODE.len()].copy_from_slice(CODE);
 
-    for _ in 0..8+9+5+2+4+2 {
+    for _ in 0..8 + 9 + 5 + 2 + 4 + 2 {
         cpu.cycle(&mut sys);
         println!("{:?}", cpu.state);
     }
 
-    assert_eq!(cpu.pc, 0x8000+CODE.len() as u16);
+    assert_eq!(cpu.pc, 0x8000 + CODE.len() as u16);
     assert_eq!(sys.ram[0], 12, "sta");
     assert_eq!(sys.ram[1], 0xEA, "sta");
     assert_eq!(cpu.dbr, 00, "dbr");

@@ -339,8 +339,12 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            }
-            AddressingMode::Direct => match (cpu.flags.emulation, cpu.tcu, ByteRef::Low(&mut cpu.d).get() == 0) {
+            },
+            AddressingMode::Direct => match (
+                cpu.flags.emulation,
+                cpu.tcu,
+                ByteRef::Low(&mut cpu.d).get() == 0,
+            ) {
                 (_, 1, _) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let offset = system.read(effective, AddressType::Program, &cpu.signals);
@@ -364,12 +368,17 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            }
+            },
             _ => todo!(),
         }
     }
 
-    pub fn write(self, cpu: &mut CPU, system: &mut impl System, mut value: u16) -> Option<TaggedByte> {
+    pub fn write(
+        self,
+        cpu: &mut CPU,
+        system: &mut impl System,
+        mut value: u16,
+    ) -> Option<TaggedByte> {
         match self {
             AddressingMode::Absolute => match (cpu.flags.emulation, cpu.tcu) {
                 (_, 1) => {
@@ -397,8 +406,12 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            }
-            AddressingMode::Direct => match (cpu.flags.emulation, cpu.tcu, ByteRef::Low(&mut cpu.d).get() == 0) {
+            },
+            AddressingMode::Direct => match (
+                cpu.flags.emulation,
+                cpu.tcu,
+                ByteRef::Low(&mut cpu.d).get() == 0,
+            ) {
                 (_, 1, _) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let offset = system.read(effective, AddressType::Program, &cpu.signals);
@@ -424,7 +437,7 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
                 _ => None,
-            }
+            },
             AddressingMode::Implied | AddressingMode::Immediate => None,
             _ => todo!(),
         }
@@ -784,7 +797,7 @@ impl CPU {
                         let a = ByteRef::Low(&mut self.a).get();
                         ByteRef::High(&mut self.a).set(a);
                         ByteRef::Low(&mut self.a).set(b);
-                        
+
                         self.flags.negative = ((b >> 7) & 1) != 0;
                         self.flags.zero = b != 0;
                     }
@@ -860,7 +873,7 @@ impl CPU {
                             Register::Y => &mut self.y,
                         })
                         .set(x);
-                        
+
                         self.flags.zero = x == 0;
                         self.flags.negative = (x >> 7) != 0;
                     }
@@ -881,7 +894,7 @@ impl CPU {
                             Register::Y => &mut self.y,
                         })
                         .set(x);
-                        
+
                         self.flags.zero = self.flags.zero && x == 0;
                         self.flags.negative = (x >> 7) != 0;
                     }
@@ -890,24 +903,31 @@ impl CPU {
                 }
                 _ => (),
             },
-            State::St(reg, addr_mode) => match addr_mode.write(self, system, match reg {
-                Register::A => self.a,
-                Register::X => self.x,
-                Register::Y => self.y,
-            }) {
+            State::St(reg, addr_mode) => match addr_mode.write(
+                self,
+                system,
+                match reg {
+                    Register::A => self.a,
+                    Register::X => self.x,
+                    Register::Y => self.y,
+                },
+            ) {
                 Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
                 Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
-                Some(TaggedByte::Data(Byte::Low(x))) => if match reg {
-                    Register::A => self.a_width(),
-                    Register::X | Register::Y => self.index_width(),
-                } == 8 {
-                    self.state = State::Fetch;
+                Some(TaggedByte::Data(Byte::Low(x))) => {
+                    if match reg {
+                        Register::A => self.a_width(),
+                        Register::X | Register::Y => self.index_width(),
+                    } == 8
+                    {
+                        self.state = State::Fetch;
+                    }
                 }
                 Some(TaggedByte::Data(Byte::High(_))) => {
                     self.state = State::Fetch;
                 }
                 _ => (),
-            }
+            },
             _ => todo!("{:?}", self.state),
         }
     }
