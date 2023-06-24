@@ -472,6 +472,8 @@ enum State {
     Tcs,
     Tdc,
     Tsc,
+    Wai,
+    Stp,
 }
 
 /// 65c816
@@ -560,6 +562,10 @@ impl CPU {
         }
 
         if self.stp && !res {
+            return;
+        }
+
+        if self.wai && !(res || nmi || irq || abort) {
             return;
         }
 
@@ -769,6 +775,8 @@ impl CPU {
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
                     0xAE => State::Ld(Register::X, AddressingMode::Absolute),
                     0xC2 => State::Sep(false),
+                    0xCB => State::Wai,
+                    0xDB => State::Stp,
                     0xE2 => State::Sep(true),
                     0xEA => State::Nop,
                     0xEB => State::Xba,
@@ -800,7 +808,6 @@ impl CPU {
                 implied(self, system);
             }
             State::Xba => {
-                self.signals.mlb = false;
                 AddressingMode::Implied.read(self, system);
 
                 if self.tcu == 2 {
@@ -812,6 +819,28 @@ impl CPU {
 
                         self.flags.negative = ((b >> 7) & 1) != 0;
                         self.flags.zero = b != 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+            }
+            State::Wai => {
+                AddressingMode::Implied.read(self, system);
+
+                if self.tcu == 2 {
+                    if !self.aborted {
+                        self.wai = true;
+                    }
+
+                    self.state = State::Fetch;
+                }
+            }
+            State::Stp => {
+                AddressingMode::Implied.read(self, system);
+
+                if self.tcu == 2 {
+                    if !self.aborted {
+                        self.stp = true;
                     }
 
                     self.state = State::Fetch;
