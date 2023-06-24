@@ -137,22 +137,74 @@ fn lda() {
     sys.ram[0x4000] = 12;
     sys.ram[0x4001] = 34;
 
-    sys.ram[0x8000..0x8000+12].copy_from_slice(&[
+    sys.ram[0x8000..0x8000+14].copy_from_slice(&[
         0xA9, 0x00, // LDA #$00
         0xA0, 0x00, // LDX #$00
         0xA2, 0x00, // LDY #$00
         0x18, // CLC
         0xFB, // XCE
+        0x18, // CLC
+        0xC2, 0x30, // REP MX
         0xAD, 0x00, 0x40, // LDA $4000
-        0x38, // SEC
     ]);
 
-    for _ in 0..8+2*6+5 {
+    for i in 0..8+20 {
+        cpu.cycle(&mut sys);
+        println!("{} {:?}", i, cpu.state);
+    }
+
+    println!("{:#?}", cpu);
+
+    assert_eq!(cpu.pc, 0x800e);
+    assert_eq!(cpu.dbr, 00, "dbr");
+    assert_eq!(cpu.pbr, 00, "pbr");
+    assert_eq!(cpu.d, 0x0000, "d");
+    assert_eq!(cpu.s & 0xff00, 0x0100, "s");
+    assert_eq!(cpu.a, 0x220c, "a");
+    assert_eq!(cpu.x & 0xff00, 0x0000, "x");
+    assert_eq!(cpu.y & 0xff00, 0x0000, "y");
+    assert!(!(cpu.signals.e && cpu.flags.emulation), "emulation");
+    assert_eq!(cpu.signals.mx(false), false, "mx:m");
+    assert_eq!(cpu.signals.mx(true), false, "mx:x");
+    assert_eq!(cpu.flags.mem_sel, false, "m");
+    assert_eq!(cpu.flags.index_sel, false, "x");
+    assert_eq!(cpu.flags.decimal, false, "d");
+    assert_eq!(cpu.flags.interrupt_disable, true, "i");
+    assert_eq!(cpu.flags.carry, false, "c");
+    assert_eq!(cpu.flags.zero, false, "z");
+}
+
+#[test]
+fn st_zp() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+
+    sys.ram[0x4000] = 12;
+    sys.ram[0x4001] = 34;
+
+    const CODE: &[u8] = &[
+        0xA9, 0x00, // LDA #$00
+        0x18, // CLC
+        0xFB, // XCE
+        0x18, // CLC
+        0xC2, 0x30, // REP MX
+        0xAD, 0x00, 0x40, // LDA $4000
+        0xE2, 0x30, // SEP MX
+        0x85, 0, // STA $00
+    ];
+
+    sys.ram[0x8000..0x8000+CODE.len()].copy_from_slice(CODE);
+
+    for _ in 0..8+9+5+2+4+2 {
         cpu.cycle(&mut sys);
         println!("{:?}", cpu.state);
     }
 
-    assert_eq!(cpu.pc, 0x800c);
+    assert_eq!(cpu.pc, 0x8000+CODE.len() as u16);
+    assert_eq!(sys.ram[0], 12, "sta");
+    assert_eq!(sys.ram[1], 0xEA, "sta");
     assert_eq!(cpu.dbr, 00, "dbr");
     assert_eq!(cpu.pbr, 00, "pbr");
     assert_eq!(cpu.d, 0x0000, "d");
@@ -167,6 +219,6 @@ fn lda() {
     assert_eq!(cpu.flags.index_sel, true, "x");
     assert_eq!(cpu.flags.decimal, false, "d");
     assert_eq!(cpu.flags.interrupt_disable, true, "i");
-    assert_eq!(cpu.flags.carry, true, "c");
+    assert_eq!(cpu.flags.carry, false, "c");
     assert_eq!(cpu.flags.zero, false, "z");
 }

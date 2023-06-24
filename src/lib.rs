@@ -236,6 +236,42 @@ impl Flags {
 
         byte
     }
+
+    pub fn set_mask(&mut self, mask: u8, set: bool) {
+        if mask & 1 != 0 {
+            self.carry = set;
+        }
+
+        if mask & 2 != 0 {
+            self.zero = set;
+        }
+
+        if mask & 4 != 0 {
+            self.interrupt_disable = set;
+        }
+
+        if mask & 8 != 0 {
+            self.decimal = set;
+        }
+
+        if mask & 0x80 != 0 {
+            self.negative = set;
+        }
+
+        if mask & 0x40 != 0 {
+            self.overflow = set;
+        }
+
+        if !self.emulation {
+            if mask & 0x20 != 0 {
+                self.mem_sel = set;
+            }
+
+            if mask & 0x10 != 0 {
+                self.index_sel = set;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
@@ -407,9 +443,14 @@ enum State {
     Ld(Register, AddressingMode),
     St(Register, AddressingMode),
     Carry(bool),
+    Sep(bool),
     Nop,
     Xce,
     Xba,
+    Tcd,
+    Tcs,
+    Tdc,
+    Tsc,
 }
 
 /// 65c816
@@ -682,14 +723,17 @@ impl CPU {
 
                 self.state = match self.ir {
                     0x18 => State::Carry(false),
+                    0x1B => State::Tcs,
                     0x38 => State::Carry(true),
+                    0x3B => State::Tsc,
+                    0x5B => State::Tcd,
+                    0x7B => State::Tdc,
                     0x84 => State::St(Register::Y, AddressingMode::Direct),
                     0x85 => State::St(Register::A, AddressingMode::Direct),
                     0x86 => State::St(Register::X, AddressingMode::Direct),
                     0x8C => State::St(Register::Y, AddressingMode::Absolute),
                     0x8D => State::St(Register::A, AddressingMode::Absolute),
                     0x8E => State::St(Register::X, AddressingMode::Absolute),
-                    0xEA => State::Nop,
                     0xA0 => State::Ld(Register::Y, AddressingMode::Immediate),
                     0xA2 => State::Ld(Register::X, AddressingMode::Immediate),
                     0xA4 => State::Ld(Register::Y, AddressingMode::Direct),
@@ -699,9 +743,12 @@ impl CPU {
                     0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
                     0xAE => State::Ld(Register::X, AddressingMode::Absolute),
+                    0xC2 => State::Sep(false),
+                    0xE2 => State::Sep(true),
+                    0xEA => State::Nop,
                     0xEB => State::Xba,
                     0xFB => State::Xce,
-                    _ => todo!(),
+                    _ => todo!("{:02x}", self.ir),
                 }
             }
             State::Nop => implied(self, system),
@@ -740,6 +787,63 @@ impl CPU {
                         
                         self.flags.negative = ((b >> 7) & 1) != 0;
                         self.flags.zero = b != 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+            }
+            State::Tcd => {
+                if !self.aborted {
+                    self.d = self.a;
+                    self.flags.zero = self.d == 0;
+                    self.flags.negative = (self.d >> 15) & 1 == 1;
+                }
+
+                implied(self, system);
+            }
+            State::Tcs => {
+                if !self.aborted {
+                    self.s = self.a;
+                    if self.flags.emulation {
+                        ByteRef::High(&mut self.s).set(0x01);
+                    }
+                    self.flags.zero = self.s == 0;
+                    self.flags.negative = (self.s >> 15) & 1 == 1;
+                }
+
+                implied(self, system);
+            }
+            State::Tdc => {
+                if !self.aborted {
+                    self.a = self.d;
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) & 1 == 1;
+                }
+
+                implied(self, system);
+            }
+            State::Tsc => {
+                if !self.aborted {
+                    self.a = self.s;
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) & 1 == 1;
+                }
+
+                implied(self, system);
+            }
+            State::Sep(set) => {
+                if self.tcu == 1 {
+                    match AddressingMode::Immediate.read(self, system) {
+                        Some(TaggedByte::Data(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
+                        _ => (),
+                    };
+                }
+
+                if self.tcu == 2 {
+                    if !self.aborted {
+                        self.flags.set_mask(ByteRef::Low(&mut self.temp).get(), set);
+                        self.signals.m = self.flags.mem_sel;
+                        self.signals.x = self.flags.index_sel;
                     }
 
                     self.state = State::Fetch;
@@ -821,16 +925,16 @@ impl CPU {
     /// Returns the width of the accumulator, either 8 or 16
     fn a_width(&self) -> u8 {
         match (self.flags.emulation, self.flags.mem_sel) {
-            (true, _) | (false, false) => 8,
-            (false, true) => 16,
+            (true, _) | (false, true) => 8,
+            (false, false) => 16,
         }
     }
 
     /// Returns the width of index registers, either 8 or 16
     fn index_width(&self) -> u8 {
         match (self.flags.emulation, self.flags.index_sel) {
-            (true, _) | (false, false) => 8,
-            (false, true) => 16,
+            (true, _) | (false, true) => 8,
+            (false, false) => 16,
         }
     }
 
