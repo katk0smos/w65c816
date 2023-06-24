@@ -731,10 +731,13 @@ impl CPU {
                     self.state = State::Nmi;
                     return;
                 } else if irq {
-                    self.ir = 0x00;
                     self.wai = false;
-                    self.state = State::Irq;
-                    return;
+
+                    if !self.flags.interrupt_disable {
+                        self.ir = 0x00;
+                        self.state = State::Irq;
+                        return;
+                    }
                 }
 
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
