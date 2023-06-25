@@ -289,6 +289,7 @@ enum AddressingMode {
     Immediate,
     Absolute,
     Direct,
+    Relative,
 }
 
 impl AddressingMode {
@@ -465,6 +466,7 @@ enum State {
     St(Register, AddressingMode),
     Carry(bool),
     Sep(bool),
+    PushAddress(AddressingMode),
     Nop,
     Xce,
     Xba,
@@ -761,6 +763,7 @@ impl CPU {
                     0x38 => State::Carry(true),
                     0x3B => State::Tsc,
                     0x5B => State::Tcd,
+                    0x62 => State::PushAddress(AddressingMode::Relative),
                     0x7B => State::Tdc,
                     0x84 => State::St(Register::Y, AddressingMode::Direct),
                     0x85 => State::St(Register::A, AddressingMode::Direct),
@@ -787,10 +790,12 @@ impl CPU {
                     0xBB => State::Transfer(Register::Y, Register::X),
                     0xC2 => State::Sep(false),
                     0xCB => State::Wai,
+                    0xD4 => State::PushAddress(AddressingMode::Direct),
                     0xDB => State::Stp,
                     0xE2 => State::Sep(true),
                     0xEA => State::Nop,
                     0xEB => State::Xba,
+                    0xF4 => State::PushAddress(AddressingMode::Immediate),
                     0xFB => State::Xce,
                     _ => todo!("{:02x}", self.ir),
                 }
@@ -1035,6 +1040,94 @@ impl CPU {
                 }
                 _ => (),
             },
+            State::PushAddress(addr_mode) => match (self.tcu, addr_mode, self.d != 0) {
+                (1, AddressingMode::Absolute, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.temp).set(value);
+                }
+                (2, AddressingMode::Absolute, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::High(&mut self.temp).set(value);
+                }
+                (3, AddressingMode::Absolute, _) => {
+                    let value = ByteRef::High(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                }
+                (4, AddressingMode::Absolute, _) => {
+                    let value = ByteRef::Low(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                    self.state = State::Fetch;
+                }
+                (1, AddressingMode::Immediate, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    self.temp = value as u16;
+                }
+                (2, AddressingMode::Immediate, true) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc.wrapping_sub(1) as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                }
+                (2, AddressingMode::Immediate, false) | (3, AddressingMode::Immediate, true) => {
+                    let effective = self.d.wrapping_add(self.temp);
+                    let value = system.read(effective as u32, AddressType::Data, &self.signals);
+                    // Set high, so we don't overwrite the offset value
+                    ByteRef::High(&mut self.temp).set(value);
+                }
+                (3, AddressingMode::Immediate, false) | (4, AddressingMode::Immediate, true) => {
+                    let effective = self
+                        .d
+                        .wrapping_add(ByteRef::Low(&mut self.temp).get() as u16)
+                        .wrapping_add(1);
+                    let value =
+                        system.read(effective as u32, AddressType::Data, &self.signals) as u16;
+                    // Flip temp around when writing the upper byte
+                    let temp = ByteRef::High(&mut self.temp).get() as u16;
+                    self.temp = temp | (value << 8);
+                }
+                (4, AddressingMode::Immediate, false) | (5, AddressingMode::Immediate, true) => {
+                    let value = ByteRef::High(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                }
+                (5, AddressingMode::Immediate, false) | (6, AddressingMode::Immediate, true) => {
+                    let value = ByteRef::Low(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                    self.state = State::Fetch;
+                }
+                (1, AddressingMode::Relative, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.temp).set(value);
+                }
+                (2, AddressingMode::Relative, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::High(&mut self.temp).set(value);
+                }
+                (3, AddressingMode::Relative, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc.wrapping_sub(1) as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                    self.temp = self.temp.wrapping_add(self.pc);
+                }
+                (4, AddressingMode::Relative, _) => {
+                    let value = ByteRef::High(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                }
+                (5, AddressingMode::Relative, _) => {
+                    let value = ByteRef::Low(&mut self.temp).get();
+                    self.stack_push(system, value, false);
+                    self.state = State::Fetch;
+                }
+                _ => {
+                    self.state = State::Fetch;
+                }
+            },
             _ => todo!("{:?}", self.state),
         }
     }
@@ -1066,11 +1159,10 @@ impl CPU {
     }
 
     /// Push to stack
-    fn stack_push(&mut self, system: &mut impl System, byte: Byte, as_read: bool) {
+    fn stack_push(&mut self, system: &mut impl System, byte: u8, as_read: bool) {
         if as_read {
             system.read(self.s as u32, AddressType::Data, &self.signals);
         } else {
-            let byte: u8 = byte.into();
             system.write(self.s as u32, byte, &self.signals);
         }
 
