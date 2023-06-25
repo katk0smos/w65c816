@@ -106,7 +106,7 @@ fn runs_forever_with_nop() {
     let mut cpu = CPU::new();
     let mut sys = Sys::default();
 
-    for _ in 0..7 + (0xFFFF-0xEAEA + 0x0100)*2 {
+    for _ in 0..7 + (0xFFFF - 0xEAEA + 0x0100) * 2 {
         cpu.cycle(&mut sys);
         println!("{:02x}{:04x}: {:?}", cpu.pbr, cpu.pc, cpu.state);
     }

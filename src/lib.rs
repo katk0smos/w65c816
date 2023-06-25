@@ -187,7 +187,6 @@ impl Default for Flags {
 
 impl Flags {
     const CARRY: u8 = 0b00000001;
-    const EMU: u8 = 0b00000001;
     const ZERO: u8 = 0b00000010;
     const IRQ_DISABLE: u8 = 0b00000100;
     const DECIMAL: u8 = 0b00001000;
@@ -231,7 +230,7 @@ impl Flags {
         }
 
         byte |= Self::BRK_BIT;
-        
+
         if is_native && self.index_sel {
             byte |= Self::INDEX_SEL;
         }
@@ -610,7 +609,12 @@ impl CPU {
                     cpu.stack_push(system, value, store_pc_p);
                 }
                 (4, true) | (5, false) => {
-                    let value = cpu.flags.as_byte() & if cpu.flags.emulation && set_b { !Flags::BRK_BIT } else { 0xff };
+                    let value = cpu.flags.as_byte()
+                        & if cpu.flags.emulation && set_b {
+                            !Flags::BRK_BIT
+                        } else {
+                            0xff
+                        };
                     cpu.stack_push(system, value, store_pc_p);
                 }
                 (5, true) | (6, false) => {
@@ -678,7 +682,7 @@ impl CPU {
             State::Fetch => {
                 self.signals.mlb = false;
                 self.tcu = 0;
-                
+
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
 
