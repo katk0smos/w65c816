@@ -49,7 +49,7 @@ impl AddressType {
             AddressType::Data => (true, false),
             AddressType::Program => (false, true),
             AddressType::Opcode => (true, true),
-            AddressType::Vector => (false, false),
+            AddressType::Vector => (true, false),
         }
     }
 
@@ -158,7 +158,6 @@ impl Signals {
 /// CPU Status Flags
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Flags {
-    pub brk: bool,
     pub carry: bool,
     pub decimal: bool,
     pub emulation: bool,
@@ -173,7 +172,6 @@ pub struct Flags {
 impl Default for Flags {
     fn default() -> Self {
         Self {
-            brk: false,
             carry: true,
             decimal: false,
             emulation: true,
@@ -232,9 +230,9 @@ impl Flags {
             byte |= Self::MEM_SEL;
         }
 
-        if !is_native && self.brk {
-            byte |= Self::BRK_BIT;
-        } else if is_native && self.index_sel {
+        byte |= Self::BRK_BIT;
+        
+        if is_native && self.index_sel {
             byte |= Self::INDEX_SEL;
         }
 
@@ -266,11 +264,7 @@ impl Flags {
             self.overflow = set;
         }
 
-        if self.emulation {
-            if mask & 0x10 != 0 {
-                self.brk = set;
-            }
-        } else {
+        if !self.emulation {
             if mask & 0x20 != 0 {
                 self.mem_sel = set;
             }
@@ -458,6 +452,10 @@ impl AddressingMode {
 enum State {
     #[default]
     Fetch,
+    Interrupt {
+        vector: u16,
+        set_brk: bool,
+    },
     Reset,
     Irq,
     Nmi,
@@ -597,61 +595,25 @@ impl CPU {
             store_pc_p: bool,
             set_b: bool,
         ) {
-            match cpu.tcu {
-                3 => {
-                    if store_pc_p {
-                        system.write(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            ByteRef::High(&mut cpu.pc).get(),
-                            &cpu.signals,
-                        );
-                    } else {
-                        system.read(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            AddressType::Data,
-                            &cpu.signals,
-                        );
-                    }
-
-                    cpu.s = cpu.s.wrapping_sub(1);
+            match (cpu.tcu, cpu.flags.emulation) {
+                (1, false) => {
+                    let effective = ((cpu.pbr as u32) << 16) | cpu.pc as u32;
+                    system.read(effective, AddressType::Invalid, &cpu.signals);
                 }
-                4 => {
-                    if store_pc_p {
-                        system.write(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            ByteRef::Low(&mut cpu.pc).get(),
-                            &cpu.signals,
-                        );
-                    } else {
-                        system.read(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            AddressType::Data,
-                            &cpu.signals,
-                        );
-                    }
-
-                    cpu.s = cpu.s.wrapping_sub(1);
+                (1, true) | (2, false) => cpu.stack_push(system, cpu.pbr, store_pc_p),
+                (2, true) | (3, false) => {
+                    let value = ByteRef::High(&mut cpu.pc).get();
+                    cpu.stack_push(system, value, store_pc_p);
                 }
-                5 => {
-                    cpu.flags.brk = set_b;
-
-                    if store_pc_p {
-                        system.write(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            cpu.flags.as_byte(),
-                            &cpu.signals,
-                        );
-                    } else {
-                        system.read(
-                            (cpu.dbr as u32) << 16 | (cpu.s as u32),
-                            AddressType::Data,
-                            &cpu.signals,
-                        );
-                    }
-
-                    cpu.s = cpu.s.wrapping_sub(1);
+                (3, true) | (4, false) => {
+                    let value = ByteRef::Low(&mut cpu.pc).get();
+                    cpu.stack_push(system, value, store_pc_p);
                 }
-                6 => {
+                (4, true) | (5, false) => {
+                    let value = cpu.flags.as_byte() & if cpu.flags.emulation && set_b { !Flags::BRK_BIT } else { 0xff };
+                    cpu.stack_push(system, value, store_pc_p);
+                }
+                (5, true) | (6, false) => {
                     cpu.flags.interrupt_disable = true;
                     ByteRef::Low(&mut cpu.pc).set(system.read(
                         vector as u32,
@@ -659,7 +621,7 @@ impl CPU {
                         &cpu.signals,
                     ));
                 }
-                7 => {
+                (6, true) | (7, false) => {
                     ByteRef::High(&mut cpu.pc).set(system.read(
                         vector.wrapping_add(1) as u32,
                         AddressType::Vector,
@@ -705,20 +667,6 @@ impl CPU {
                     _ => interrupt(self, system, 0xfffc, false, false),
                 }
             }
-            State::Nmi => {
-                if self.flags.emulation {
-                    interrupt(self, system, 0x00fffa, true, false);
-                } else {
-                    interrupt(self, system, 0x00ffea, true, false);
-                }
-            }
-            State::Irq => {
-                if self.flags.emulation {
-                    interrupt(self, system, 0x00fffe, true, false);
-                } else {
-                    interrupt(self, system, 0x00ffee, true, false);
-                }
-            }
             State::Abort => {
                 if self.flags.emulation {
                     interrupt(self, system, 0x00fff8, true, false);
@@ -726,9 +674,13 @@ impl CPU {
                     interrupt(self, system, 0x00ffe8, true, false);
                 }
             }
+            State::Interrupt { vector, set_brk } => interrupt(self, system, vector, true, set_brk),
             State::Fetch => {
                 self.signals.mlb = false;
                 self.tcu = 0;
+                
+                let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                self.ir = system.read(effective, AddressType::Opcode, &self.signals);
 
                 if res {
                     self.ir = 0x00;
@@ -739,7 +691,10 @@ impl CPU {
                 } else if nmi {
                     self.ir = 0x00;
                     self.wai = false;
-                    self.state = State::Nmi;
+                    self.state = State::Interrupt {
+                        vector: if self.flags.emulation { 0xfffa } else { 0xffea },
+                        set_brk: false,
+                    };
                     return;
                 } else if irq {
                     let had_wai = self.wai;
@@ -747,15 +702,15 @@ impl CPU {
 
                     if !had_wai || !self.flags.interrupt_disable {
                         self.ir = 0x00;
-                        self.state = State::Irq;
+                        self.state = State::Interrupt {
+                            vector: if self.flags.emulation { 0xfffe } else { 0xffee },
+                            set_brk: false,
+                        };
                         return;
                     }
                 }
 
-                let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
-                self.ir = system.read(effective, AddressType::Opcode, &self.signals);
                 self.pc = self.pc.wrapping_add(1);
-                self.tcu = 0;
 
                 self.state = match self.ir {
                     0x18 => State::Carry(false),

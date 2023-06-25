@@ -41,7 +41,7 @@ fn reset() {
     sys.ram[0xfffc] = 0x00;
     sys.ram[0xfffd] = 0x80;
 
-    for _ in 0..8 {
+    for _ in 0..7 {
         cpu.cycle(&mut sys);
     }
 
@@ -76,7 +76,7 @@ fn init() {
     sys.ram[0x8004] = 0xA2;
     sys.ram[0x8005] = 0x23;
 
-    for _ in 0..8 + 2 * 3 {
+    for _ in 0..7 + 2 * 3 {
         cpu.cycle(&mut sys);
     }
 
@@ -106,11 +106,12 @@ fn runs_forever_with_nop() {
     let mut cpu = CPU::new();
     let mut sys = Sys::default();
 
-    for _ in 0..8 + 0x20000 {
+    for _ in 0..7 + (0xFFFF-0xEAEA + 0x0100)*2 {
         cpu.cycle(&mut sys);
+        println!("{:02x}{:04x}: {:?}", cpu.pbr, cpu.pc, cpu.state);
     }
 
-    assert_eq!(cpu.pc, 0xEAEA);
+    assert_eq!(cpu.pc, 0x00ff);
     assert_eq!(cpu.dbr, 00, "dbr");
     assert_eq!(cpu.pbr, 00, "pbr");
     assert_eq!(cpu.d, 0x0000, "d");
@@ -148,7 +149,7 @@ fn lda() {
         0xAD, 0x00, 0x40, // LDA $4000
     ]);
 
-    for i in 0..8 + 20 {
+    for i in 0..7 + 20 {
         cpu.cycle(&mut sys);
     }
 
@@ -194,7 +195,7 @@ fn st_zp() {
 
     sys.ram[0x8000..0x8000 + CODE.len()].copy_from_slice(CODE);
 
-    for _ in 0..8 + 9 + 5 + 2 + 4 + 2 {
+    for _ in 0..7 + 9 + 5 + 2 + 4 + 2 {
         cpu.cycle(&mut sys);
     }
 
@@ -281,7 +282,7 @@ fn wai_irq_i_special_behavior() {
 
     sys.ram[0x8000..0x8000 + CODE.len()].copy_from_slice(CODE);
 
-    for _ in 0..8 + 2 + 5 {
+    for _ in 0..7 + 2 + 5 {
         cpu.cycle(&mut sys);
     }
 
