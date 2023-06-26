@@ -722,6 +722,10 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
 
                 self.state = match self.ir {
+                    0x00 => State::Interrupt {
+                        vector: if self.flags.emulation { 0xfffe } else { 0xffee },
+                        set_brk: true,
+                    },
                     0x18 => State::Carry(false),
                     0x1B => State::Tcs,
                     0x38 => State::Carry(true),

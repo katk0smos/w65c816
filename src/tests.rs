@@ -1,7 +1,7 @@
 use super::*;
 
 struct Sys {
-    ram: [u8; 0x10000],
+    ram: Box<[u8]>,
     res: bool,
     irq: bool,
     nmi: bool,
@@ -11,7 +11,7 @@ struct Sys {
 impl Default for Sys {
     fn default() -> Self {
         Self {
-            ram: [0xEA; 0x10000],
+            ram: vec![0xEAu8; 0x1000000].into_boxed_slice(),
             res: true,
             irq: false,
             nmi: false,
@@ -36,7 +36,7 @@ impl Sys {
 
 impl System for Sys {
     fn read(&mut self, a: u32, _at: AddressType, _signals: &Signals) -> u8 {
-        let d = self.ram[(a & 0x00ffff) as usize];
+        let d = self.ram[(a & 0xffffff) as usize];
         println!("{:06x} -> {:02x}", a, d);
         d
     }
