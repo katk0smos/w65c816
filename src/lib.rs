@@ -462,8 +462,11 @@ enum State {
     Ld(Register, AddressingMode),
     St(Register, AddressingMode),
     Carry(bool),
+    IntDisable(bool),
     Sep(bool),
     PushAddress(AddressingMode),
+    Rti,
+    Rts,
     Nop,
     Xce,
     Xba,
@@ -599,14 +602,14 @@ impl CPU {
                     let effective = ((cpu.pbr as u32) << 16) | cpu.pc as u32;
                     system.read(effective, AddressType::Invalid, &cpu.signals);
                 }
-                (1, true) | (2, false) => cpu.stack_push(system, cpu.pbr, store_pc_p),
+                (1, true) | (2, false) => cpu.stack_push(system, cpu.pbr, !store_pc_p),
                 (2, true) | (3, false) => {
                     let value = ByteRef::High(&mut cpu.pc).get();
-                    cpu.stack_push(system, value, store_pc_p);
+                    cpu.stack_push(system, value, !store_pc_p);
                 }
                 (3, true) | (4, false) => {
                     let value = ByteRef::Low(&mut cpu.pc).get();
-                    cpu.stack_push(system, value, store_pc_p);
+                    cpu.stack_push(system, value, !store_pc_p);
                 }
                 (4, true) | (5, false) => {
                     let value = cpu.flags.as_byte()
@@ -615,7 +618,7 @@ impl CPU {
                         } else {
                             0xff
                         };
-                    cpu.stack_push(system, value, store_pc_p);
+                    cpu.stack_push(system, value, !store_pc_p);
                 }
                 (5, true) | (6, false) => {
                     cpu.flags.interrupt_disable = true;
@@ -721,8 +724,12 @@ impl CPU {
                     0x1B => State::Tcs,
                     0x38 => State::Carry(true),
                     0x3B => State::Tsc,
+                    0x40 => State::Rti,
+                    0x58 => State::IntDisable(false),
                     0x5B => State::Tcd,
+                    0x60 => State::Rts,
                     0x62 => State::PushAddress(AddressingMode::Relative),
+                    0x78 => State::IntDisable(true),
                     0x7B => State::Tdc,
                     0x84 => State::St(Register::Y, AddressingMode::Direct),
                     0x85 => State::St(Register::A, AddressingMode::Direct),
@@ -762,6 +769,10 @@ impl CPU {
             State::Nop => implied(self, system),
             State::Carry(state) => {
                 self.flags.carry = state;
+                implied(self, system);
+            }
+            State::IntDisable(state) => {
+                self.flags.interrupt_disable = state;
                 implied(self, system);
             }
             State::Xce => {
@@ -1083,9 +1094,56 @@ impl CPU {
                     self.stack_push(system, value, false);
                     self.state = State::Fetch;
                 }
-                _ => {
+                _ => unreachable!(),
+            },
+            State::Rts => match self.tcu {
+                1 | 2 => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                }
+                3 => {
+                    let pcl = self.stack_pop(system);
+                    ByteRef::Low(&mut self.pc).set(pcl);
+                }
+                4 => {
+                    let pch = self.stack_pop(system);
+                    ByteRef::High(&mut self.pc).set(pch);
+                }
+                5 => {
+                    let effective = self.s.wrapping_add(1) as u32;
+                    system.read(effective, AddressType::Invalid, &self.signals);
                     self.state = State::Fetch;
                 }
+                _ => unreachable!(),
+            },
+            State::Rti => match self.tcu {
+                1 | 2 => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                }
+                3 => {
+                    let p = self.stack_pop(system);
+                    self.flags.set_mask(p, true);
+                    self.flags.set_mask(!p, false);
+                }
+                4 => {
+                    let pcl = self.stack_pop(system);
+                    ByteRef::Low(&mut self.pc).set(pcl);
+                }
+                5 => {
+                    let pch = self.stack_pop(system);
+                    ByteRef::High(&mut self.pc).set(pch);
+
+                    if self.flags.emulation {
+                        self.state = State::Fetch;
+                    }
+                }
+                6 => {
+                    let pbr = self.stack_pop(system);
+                    self.pbr = pbr;
+                    self.state = State::Fetch;
+                }
+                _ => unreachable!(),
             },
             _ => todo!("{:?}", self.state),
         }
@@ -1132,10 +1190,10 @@ impl CPU {
 
     /// Pop from stack
     fn stack_pop(&mut self, system: &mut impl System) -> u8 {
-        let x = system.read(self.s as u32, AddressType::Data, &self.signals);
         if !self.aborted {
-            self.s = self.s.wrapping_sub(1);
+            self.s = self.s.wrapping_add(1);
         }
-        x
+
+        system.read(self.s as u32, AddressType::Data, &self.signals)
     }
 }
