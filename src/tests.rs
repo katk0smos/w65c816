@@ -362,6 +362,7 @@ fn irq() {
     }
 
     assert_eq!(cpu.pc, 0x9000, "pc");
+    assert!(cpu.flags.interrupt_disable, "i");
 
     for _ in 0..8 {
         cpu.cycle(&mut sys);

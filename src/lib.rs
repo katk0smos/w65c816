@@ -463,6 +463,8 @@ enum State {
     St(Register, AddressingMode),
     Carry(bool),
     IntDisable(bool),
+    Decimal(bool),
+    ClearOverflow,
     Sep(bool),
     PushAddress(AddressingMode),
     Rti,
@@ -752,16 +754,19 @@ impl CPU {
                     0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
                     0xAE => State::Ld(Register::X, AddressingMode::Absolute),
+                    0xB8 => State::ClearOverflow,
                     0xBA => State::Tsx,
                     0xBB => State::Transfer(Register::Y, Register::X),
                     0xC2 => State::Sep(false),
                     0xCB => State::Wai,
                     0xD4 => State::PushAddress(AddressingMode::Direct),
+                    0xD8 => State::Decimal(false),
                     0xDB => State::Stp,
                     0xE2 => State::Sep(true),
                     0xEA => State::Nop,
                     0xEB => State::Xba,
                     0xF4 => State::PushAddress(AddressingMode::Immediate),
+                    0xF8 => State::Decimal(true),
                     0xFB => State::Xce,
                     _ => todo!("{:02x}", self.ir),
                 }
@@ -773,6 +778,14 @@ impl CPU {
             }
             State::IntDisable(state) => {
                 self.flags.interrupt_disable = state;
+                implied(self, system);
+            }
+            State::Decimal(state) => {
+                self.flags.decimal = state;
+                implied(self, system);
+            }
+            State::ClearOverflow => {
+                self.flags.overflow = false;
                 implied(self, system);
             }
             State::Xce => {
