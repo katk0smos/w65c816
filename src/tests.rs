@@ -33,7 +33,7 @@ impl Sys {
         self.irq = true;
     }
 
-    fn code(&mut self, addr: u32, code: &[u8]) {
+    fn write_code(&mut self, addr: u32, code: &[u8]) {
         self.ram[addr as usize..addr as usize + code.len()].copy_from_slice(code);
     }
 }
@@ -185,7 +185,7 @@ fn lda() {
     sys.ram[0x4000] = 12;
     sys.ram[0x4001] = 34;
 
-    sys.code(0x008000, &[
+    sys.write_code(0x008000, &[
         0xA9, 0x00, // LDA #$00
         0xA0, 0x00, // LDX #$00
         0xA2, 0x00, // LDY #$00
@@ -240,7 +240,7 @@ fn st_zp() {
         0x85, 0, // STA $00
     ];
 
-    sys.code(0x008000, CODE);
+    sys.write_code(0x008000, CODE);
 
     for _ in 0..7 + 9 + 5 + 2 + 4 + 2 {
         cpu.cycle(&mut sys);
@@ -281,7 +281,7 @@ fn wai_irq_i_special_behavior() {
         0xA9, 0xff, // LDA #$ff
     ];
 
-    sys.code(0x008000, CODE);
+    sys.write_code(0x008000, CODE);
 
     for _ in 0..7 + 2 + 5 {
         cpu.cycle(&mut sys);
@@ -341,8 +341,8 @@ fn irq() {
         0x40, // RTI
     ];
 
-    sys.code(0x008000, CODE);
-    sys.code(0x009000, CODE2);
+    sys.write_code(0x008000, CODE);
+    sys.write_code(0x009000, CODE2);
 
     for _ in 0..7 + 2 + 2 + 5 {
         println!("{:?}", cpu.state);
