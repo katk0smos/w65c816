@@ -185,16 +185,19 @@ fn lda() {
     sys.ram[0x4000] = 12;
     sys.ram[0x4001] = 34;
 
-    sys.write_code(0x008000, &[
-        0xA9, 0x00, // LDA #$00
-        0xA0, 0x00, // LDX #$00
-        0xA2, 0x00, // LDY #$00
-        0x18, // CLC
-        0xFB, // XCE
-        0x18, // CLC
-        0xC2, 0x30, // REP MX
-        0xAD, 0x00, 0x40, // LDA $4000
-    ]);
+    sys.write_code(
+        0x008000,
+        &[
+            0xA9, 0x00, // LDA #$00
+            0xA0, 0x00, // LDX #$00
+            0xA2, 0x00, // LDY #$00
+            0x18, // CLC
+            0xFB, // XCE
+            0x18, // CLC
+            0xC2, 0x30, // REP MX
+            0xAD, 0x00, 0x40, // LDA $4000
+        ],
+    );
 
     for i in 0..7 + 20 {
         cpu.cycle(&mut sys);
