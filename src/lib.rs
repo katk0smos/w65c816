@@ -62,7 +62,7 @@ impl AddressType {
     }
 
     pub fn into_vpb(&self) -> bool {
-        !matches!(self, AddressType::Vector)
+        matches!(self, AddressType::Vector)
     }
 }
 
@@ -229,9 +229,9 @@ impl Flags {
             byte |= Self::MEM_SEL;
         }
 
-        byte |= Self::BRK_BIT;
-
-        if is_native && self.index_sel {
+        if !is_native {
+            byte |= Self::BRK_BIT;
+        } else if self.index_sel {
             byte |= Self::INDEX_SEL;
         }
 
@@ -239,38 +239,51 @@ impl Flags {
     }
 
     pub fn set_mask(&mut self, mask: u8, set: bool) {
-        if mask & 1 != 0 {
+        if mask & Self::CARRY != 0 {
             self.carry = set;
         }
 
-        if mask & 2 != 0 {
+        if mask & Self::ZERO != 0 {
             self.zero = set;
         }
 
-        if mask & 4 != 0 {
+        if mask & Self::IRQ_DISABLE != 0 {
             self.interrupt_disable = set;
         }
 
-        if mask & 8 != 0 {
+        if mask & Self::DECIMAL != 0 {
             self.decimal = set;
         }
 
-        if mask & 0x80 != 0 {
+        if mask & Self::NEGATIVE != 0 {
             self.negative = set;
         }
 
-        if mask & 0x40 != 0 {
+        if mask & Self::OVERFLOW != 0 {
             self.overflow = set;
         }
 
         if !self.emulation {
-            if mask & 0x20 != 0 {
+            if mask & Self::MEM_SEL != 0 {
                 self.mem_sel = set;
             }
 
-            if mask & 0x10 != 0 {
+            if mask & Self::INDEX_SEL != 0 {
                 self.index_sel = set;
             }
+        }
+    }
+
+    pub fn set(&mut self, value: u8) {
+        self.carry = value & 1 != 0;
+        self.zero = value & 2 != 0;
+        self.interrupt_disable = value & 4 != 0;
+        self.decimal = value & 8 != 0;
+        self.negative = value & 0x80 != 0;
+        self.overflow = value & 0x40 != 0;
+        if !self.emulation {
+            self.mem_sel = value & 0x20 != 0;
+            self.index_sel = value & 0x10 != 0;
         }
     }
 }
@@ -1176,6 +1189,11 @@ impl CPU {
         &self.signals
     }
 
+    /// Flags
+    pub fn flags(&self) -> &Flags {
+        &self.flags
+    }
+
     /// Returns the width of the accumulator, either 8 or 16
     fn a_width(&self) -> u8 {
         match (self.flags.emulation, self.flags.mem_sel) {
@@ -1220,5 +1238,135 @@ impl CPU {
         }
 
         system.read(self.s as u32, AddressType::Data, &self.signals)
+    }
+
+    /// Sets the emulation flag state
+    pub fn set_e(&mut self, e: bool) {
+        self.flags.emulation = e;
+        self.signals.e = e;
+    }
+
+    /// Sets the program bank register
+    pub fn set_pbr(&mut self, pbr: u8) {
+        self.pbr = pbr;
+    }
+
+    /// Sets the program bank register
+    pub fn set_dbr(&mut self, dbr: u8) {
+        self.dbr = dbr;
+    }
+
+    /// Set the program counter
+    pub fn set_pc(&mut self, pc: u16) {
+        self.pc = pc;
+    }
+
+    /// Set the stack pointer
+    pub fn set_s(&mut self, s: u16) {
+        self.s = s;
+        
+        if self.flags.emulation {
+            ByteRef::High(&mut self.s).set(0x01);
+        }
+    }
+
+    /// Sets the flag register
+    pub fn set_p(&mut self, p: u8) {
+        self.flags.set(p);
+        self.signals.m = self.flags.mem_sel;
+        self.signals.x = self.flags.index_sel;
+    }
+
+    /// Sets the accumulator's low byte
+    pub fn set_a(&mut self, a: u8) {
+        ByteRef::Low(&mut self.a).set(a);
+    }
+
+    /// Sets the accumulator's high byte
+    pub fn set_b(&mut self, b: u8) {
+        ByteRef::High(&mut self.a).set(b);
+    }
+
+    /// Sets the accumulator
+    pub fn set_c(&mut self, c: u16) {
+        self.a = c;
+    }
+
+    /// Sets the X index register
+    pub fn set_x(&mut self, mut x: u16) {
+        if self.index_width() == 8 {
+            ByteRef::Low(&mut self.x).set(ByteRef::Low(&mut x).get());
+        } else {
+            self.x = x;
+        }
+    }
+
+    /// Sets the Y index register
+    pub fn set_y(&mut self, mut y: u16) {
+        if self.index_width() == 8 {
+            ByteRef::Low(&mut self.y).set(ByteRef::Low(&mut y).get());
+        } else {
+            self.y = y;
+        }
+    }
+    
+    /// Sets the Direct register (D)
+    pub fn set_d(&mut self, d: u16) {
+        self.d = d;
+    }
+
+    /// Returns the processor status flags register (P)
+    pub fn p(&self) -> u8 {
+        self.flags.as_byte()
+    }
+
+    /// Returns the Direct register (D)
+    pub fn d(&self) -> u16 {
+        self.d
+    }
+
+    /// Returns the X index register
+    pub fn x(&self) -> u16 {
+        self.x
+    }
+    
+    /// Returns the Y index register
+    pub fn y(&self) -> u16 {
+        self.y
+    }
+    
+    /// Returns the stack pointer
+    pub fn s(&self) -> u16 {
+        self.s
+    }
+    
+    /// Returns the program counter
+    pub fn pc(&self) -> u16 {
+        self.pc
+    }
+    
+    /// Returns the program bank register
+    pub fn pbr(&self) -> u8 {
+        self.pbr
+    }
+
+    /// Returns the data bank register
+    pub fn dbr(&self) -> u8 {
+        self.dbr
+    }
+    
+    /// Returns the accumulator
+    pub fn c(&self) -> u16 {
+        self.a
+    }
+    
+    /// Returns the accumulator's low byte
+    pub fn a(&self) -> u8 {
+        self.a as u8
+    }
+
+    /// Returns the accumulator's high byte
+    pub fn b(&self) -> u8 {
+        (self.a >> 8) as u8
     }
 }
