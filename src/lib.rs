@@ -950,8 +950,6 @@ impl CPU {
                     if self.flags.emulation {
                         ByteRef::High(&mut self.s).set(0x01);
                     }
-                    self.flags.zero = self.s == 0;
-                    self.flags.negative = (self.s >> 15) & 1 == 1;
                 }
 
                 implied(self, system);
