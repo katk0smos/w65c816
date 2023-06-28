@@ -349,12 +349,12 @@ impl AddressingMode {
                     Some(TaggedByte::Address(Byte::High(value)))
                 }
                 (_, 3) => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp as u32);
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.scratch as u32);
                     let value = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective = (((cpu.dbr as u32) << 16) | (cpu.temp as u32)).wrapping_add(1);
+                    let effective = (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
                     let value = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -378,12 +378,12 @@ impl AddressingMode {
                     None
                 }
                 (_, 2, true) | (_, 3, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
                     let value = system.read(addr, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 3, true) | (false, 4, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
                     let value = system.read(addr, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -414,13 +414,13 @@ impl AddressingMode {
                     Some(TaggedByte::Address(Byte::High(value)))
                 }
                 (_, 3) => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp as u32);
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.scratch as u32);
                     let value = ByteRef::Low(&mut value).get();
                     system.write(effective, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective = (((cpu.dbr as u32) << 16) | (cpu.temp as u32)).wrapping_add(1);
+                    let effective = (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
                     let value = ByteRef::High(&mut value).get();
                     system.write(effective, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -445,13 +445,13 @@ impl AddressingMode {
                     None
                 }
                 (_, 2, true) | (_, 3, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
                     let value = ByteRef::Low(&mut value).get();
                     system.write(addr, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 3, true) | (false, 4, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp).get() as u16) as u32;
+                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
                     let value = ByteRef::High(&mut value).get();
                     system.write(addr, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -538,9 +538,9 @@ pub struct CPU {
     state: State,
     /// Whether to inhibit internal register changes
     aborted: bool,
-    /// Temporary register for internal use.
+    /// Temporary scratch register for internal use.
     /// Used for addressing instructions
-    temp: u16,
+    scratch: u16,
 }
 
 impl Default for CPU {
@@ -563,7 +563,7 @@ impl Default for CPU {
             flags: Flags::default(),
             signals: Signals::default(),
             state: State::default(),
-            temp: 0,
+            scratch: 0,
         }
     }
 }
@@ -967,11 +967,11 @@ impl CPU {
                     if let Some(TaggedByte::Data(Byte::Low(x))) =
                         AddressingMode::Immediate.read(self, system)
                     {
-                        ByteRef::Low(&mut self.temp).set(x);
+                        ByteRef::Low(&mut self.scratch).set(x);
                     }
                 } else if self.tcu == 2 {
                     if !self.aborted {
-                        self.flags.set_mask(ByteRef::Low(&mut self.temp).get(), set);
+                        self.flags.set_mask(ByteRef::Low(&mut self.scratch).get(), set);
                         self.signals.m = self.flags.mem_sel;
                         self.signals.x = self.flags.index_sel;
                     }
@@ -980,8 +980,8 @@ impl CPU {
                 }
             }
             State::Ld(reg, addr_mode) => match addr_mode.read(self, system) {
-                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
-                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
+                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.scratch).set(x),
+                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.scratch).set(x),
                 Some(TaggedByte::Data(Byte::Low(x))) => {
                     if !self.aborted {
                         ByteRef::Low(match reg {
@@ -1029,8 +1029,8 @@ impl CPU {
                     Register::Y => self.y,
                 },
             ) {
-                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.temp).set(x),
-                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.temp).set(x),
+                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.scratch).set(x),
+                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.scratch).set(x),
                 Some(TaggedByte::Data(Byte::Low(_x))) => {
                     if match reg {
                         Register::A => self.a_width(),
@@ -1050,20 +1050,20 @@ impl CPU {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let value = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::Low(&mut self.temp).set(value);
+                    ByteRef::Low(&mut self.scratch).set(value);
                 }
                 (2, AddressingMode::Absolute, _) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let value = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::High(&mut self.temp).set(value);
+                    ByteRef::High(&mut self.scratch).set(value);
                 }
                 (3, AddressingMode::Absolute, _) => {
-                    let value = ByteRef::High(&mut self.temp).get();
+                    let value = ByteRef::High(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                 }
                 (4, AddressingMode::Absolute, _) => {
-                    let value = ByteRef::Low(&mut self.temp).get();
+                    let value = ByteRef::Low(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                     self.state = State::Fetch;
                 }
@@ -1071,35 +1071,35 @@ impl CPU {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let value = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    self.temp = value as u16;
+                    self.scratch = value as u16;
                 }
                 (2, AddressingMode::Immediate, true) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc.wrapping_sub(1) as u32);
                     system.read(effective, AddressType::Invalid, &self.signals);
                 }
                 (2, AddressingMode::Immediate, false) | (3, AddressingMode::Immediate, true) => {
-                    let effective = self.d.wrapping_add(self.temp);
+                    let effective = self.d.wrapping_add(self.scratch);
                     let value = system.read(effective as u32, AddressType::Data, &self.signals);
                     // Set high, so we don't overwrite the offset value
-                    ByteRef::High(&mut self.temp).set(value);
+                    ByteRef::High(&mut self.scratch).set(value);
                 }
                 (3, AddressingMode::Immediate, false) | (4, AddressingMode::Immediate, true) => {
                     let effective = self
                         .d
-                        .wrapping_add(ByteRef::Low(&mut self.temp).get() as u16)
+                        .wrapping_add(ByteRef::Low(&mut self.scratch).get() as u16)
                         .wrapping_add(1);
                     let value =
                         system.read(effective as u32, AddressType::Data, &self.signals) as u16;
                     // Flip temp around when writing the upper byte
-                    let temp = ByteRef::High(&mut self.temp).get() as u16;
-                    self.temp = temp | (value << 8);
+                    let temp = ByteRef::High(&mut self.scratch).get() as u16;
+                    self.scratch = temp | (value << 8);
                 }
                 (4, AddressingMode::Immediate, false) | (5, AddressingMode::Immediate, true) => {
-                    let value = ByteRef::High(&mut self.temp).get();
+                    let value = ByteRef::High(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                 }
                 (5, AddressingMode::Immediate, false) | (6, AddressingMode::Immediate, true) => {
-                    let value = ByteRef::Low(&mut self.temp).get();
+                    let value = ByteRef::Low(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                     self.state = State::Fetch;
                 }
@@ -1107,25 +1107,25 @@ impl CPU {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let value = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::Low(&mut self.temp).set(value);
+                    ByteRef::Low(&mut self.scratch).set(value);
                 }
                 (2, AddressingMode::Relative, _) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let value = system.read(effective, AddressType::Program, &self.signals);
                     self.pc = self.pc.wrapping_add(1);
-                    ByteRef::High(&mut self.temp).set(value);
+                    ByteRef::High(&mut self.scratch).set(value);
                 }
                 (3, AddressingMode::Relative, _) => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc.wrapping_sub(1) as u32);
                     system.read(effective, AddressType::Invalid, &self.signals);
-                    self.temp = self.temp.wrapping_add(self.pc);
+                    self.scratch = self.scratch.wrapping_add(self.pc);
                 }
                 (4, AddressingMode::Relative, _) => {
-                    let value = ByteRef::High(&mut self.temp).get();
+                    let value = ByteRef::High(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                 }
                 (5, AddressingMode::Relative, _) => {
-                    let value = ByteRef::Low(&mut self.temp).get();
+                    let value = ByteRef::Low(&mut self.scratch).get();
                     self.stack_push(system, value, false);
                     self.state = State::Fetch;
                 }
