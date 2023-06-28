@@ -506,6 +506,7 @@ enum State {
     Rti,
     Rts,
     Nop,
+    Wdm,
     Xce,
     Xba,
     Transfer(Register, Register),
@@ -789,6 +790,7 @@ impl CPU {
                     0x38 => State::Carry(true),
                     0x3B => State::Tsc,
                     0x40 => State::Rti,
+                    0x42 => State::Wdm,
                     0x58 => State::IntDisable(false),
                     0x5B => State::Tcd,
                     0x60 => State::Rts,
@@ -834,6 +836,10 @@ impl CPU {
                 }
             }
             State::Nop => implied(self, system),
+            State::Wdm => {
+                AddressingMode::Immediate.read(self, system);
+                self.state = State::Fetch;
+            }
             State::Carry(state) => {
                 self.flags.carry = state;
                 implied(self, system);
