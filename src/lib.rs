@@ -227,7 +227,7 @@ impl Flags {
         if self.carry {
             byte |= Self::CARRY;
         }
-        
+
         if !is_native || (is_native && self.mem_sel) {
             byte |= Self::MEM_SEL;
         }
@@ -388,8 +388,7 @@ impl AddressingMode {
                     let addr = cpu
                         .d
                         .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
-                        .wrapping_add(1)
-                        as u32;
+                        .wrapping_add(1) as u32;
                     let value = system.read(addr, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -434,8 +433,7 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective =
-                        ((cpu.dbr as u32) << 16) | (cpu.scratch.wrapping_add(1) as u32);
+                    let effective = ((cpu.dbr as u32) << 16) | (cpu.scratch.wrapping_add(1) as u32);
                     let value = ByteRef::High(&mut value).get();
                     system.write(effective, value, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -472,8 +470,7 @@ impl AddressingMode {
                     let addr = cpu
                         .d
                         .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
-                        .wrapping_add(1)
-                        as u32;
+                        .wrapping_add(1) as u32;
                     let value = ByteRef::High(&mut value).get();
                     system.write(addr, value, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -675,7 +672,7 @@ impl CPU {
                         AddressType::Vector,
                         &cpu.signals,
                     ));
-                    
+
                     cpu.pbr = 0;
                     cpu.dbr = 0;
                     cpu.state = State::Fetch;
@@ -1198,7 +1195,8 @@ impl CPU {
                     ByteRef::Low(&mut self.pc).set(pcl);
                 }
                 4 => {
-                    let pch = self.stack_pop(system)
+                    let pch = self
+                        .stack_pop(system)
                         .wrapping_add(ByteRef::Low(&mut self.scratch).get());
                     ByteRef::High(&mut self.pc).set(pch);
                 }
