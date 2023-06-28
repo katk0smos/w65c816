@@ -776,7 +776,7 @@ impl CPU {
                     0xBB => State::Transfer(Register::Y, Register::X),
                     0xC2 => State::Sep(false),
                     0xCB => State::Wai,
-                    0xD4 => State::PushAddress(AddressingMode::Direct),
+                    0xD4 => State::PushAddress(AddressingMode::Absolute),
                     0xD8 => State::Decimal(false),
                     0xDB => State::Stp,
                     0xE2 => State::Sep(true),
