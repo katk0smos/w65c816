@@ -1,9 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(feature = "nightly", feature(test))]
-
 #![cfg(feature = "nightly")]
 extern crate test;
-
 
 #[cfg(test)]
 mod tests;
@@ -354,7 +352,8 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective = (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
+                    let effective =
+                        (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
                     let value = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -378,12 +377,18 @@ impl AddressingMode {
                     None
                 }
                 (_, 2, true) | (_, 3, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
+                    let addr = cpu
+                        .d
+                        .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
+                        as u32;
                     let value = system.read(addr, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 3, true) | (false, 4, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
+                    let addr = cpu
+                        .d
+                        .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
+                        as u32;
                     let value = system.read(addr, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
@@ -420,7 +425,8 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 4) => {
-                    let effective = (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
+                    let effective =
+                        (((cpu.dbr as u32) << 16) | (cpu.scratch as u32)).wrapping_add(1);
                     let value = ByteRef::High(&mut value).get();
                     system.write(effective, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -445,13 +451,19 @@ impl AddressingMode {
                     None
                 }
                 (_, 2, true) | (_, 3, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
+                    let addr = cpu
+                        .d
+                        .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
+                        as u32;
                     let value = ByteRef::Low(&mut value).get();
                     system.write(addr, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(value)))
                 }
                 (false, 3, true) | (false, 4, false) => {
-                    let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16) as u32;
+                    let addr = cpu
+                        .d
+                        .wrapping_add(ByteRef::Low(&mut cpu.scratch).get() as u16)
+                        as u32;
                     let value = ByteRef::High(&mut value).get();
                     system.write(addr, value, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
@@ -971,7 +983,8 @@ impl CPU {
                     }
                 } else if self.tcu == 2 {
                     if !self.aborted {
-                        self.flags.set_mask(ByteRef::Low(&mut self.scratch).get(), set);
+                        self.flags
+                            .set_mask(ByteRef::Low(&mut self.scratch).get(), set);
                         self.signals.m = self.flags.mem_sel;
                         self.signals.x = self.flags.index_sel;
                     }
@@ -1269,7 +1282,7 @@ impl CPU {
     /// Set the stack pointer
     pub fn set_s(&mut self, s: u16) {
         self.s = s;
-        
+
         if self.flags.emulation {
             ByteRef::High(&mut self.s).set(0x01);
         }
@@ -1314,7 +1327,7 @@ impl CPU {
             self.y = y;
         }
     }
-    
+
     /// Sets the Direct register (D)
     pub fn set_d(&mut self, d: u16) {
         self.d = d;
@@ -1334,22 +1347,22 @@ impl CPU {
     pub fn x(&self) -> u16 {
         self.x
     }
-    
+
     /// Returns the Y index register
     pub fn y(&self) -> u16 {
         self.y
     }
-    
+
     /// Returns the stack pointer
     pub fn s(&self) -> u16 {
         self.s
     }
-    
+
     /// Returns the program counter
     pub fn pc(&self) -> u16 {
         self.pc
     }
-    
+
     /// Returns the program bank register
     pub fn pbr(&self) -> u8 {
         self.pbr
@@ -1359,12 +1372,12 @@ impl CPU {
     pub fn dbr(&self) -> u8 {
         self.dbr
     }
-    
+
     /// Returns the accumulator
     pub fn c(&self) -> u16 {
         self.a
     }
-    
+
     /// Returns the accumulator's low byte
     pub fn a(&self) -> u8 {
         self.a as u8
