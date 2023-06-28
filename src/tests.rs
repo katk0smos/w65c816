@@ -45,9 +45,11 @@ impl System for Sys {
         d
     }
 
-    fn write(&mut self, a: u32, d: u8, _signals: &Signals) {
+    fn write(&mut self, a: u32, d: u8, at: AddressType, _signals: &Signals) {
         println!("{:06x} <- {:02x}", a, d);
-        self.ram[(a & 0xffffff) as usize] = d;
+        if at != AddressType::Invalid {
+            self.ram[(a & 0xffffff) as usize] = d;
+        }
     }
 
     fn res(&mut self) -> bool {
