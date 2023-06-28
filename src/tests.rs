@@ -110,6 +110,28 @@ fn reset() {
     assert!(cpu.flags.carry, "c");
 }
 
+#[bench]
+fn nops_bench(b: &mut test::Bencher) {
+    use test::black_box;
+
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x02;
+
+    for _ in 0..7 {
+        cpu.cycle(&mut sys);
+    }
+
+    b.iter(|| {
+        let mut cpu = cpu.clone();
+
+        for _ in 0..2 {
+            black_box(cpu.cycle(&mut sys));
+        }
+    });
+}
+
 #[test]
 fn init() {
     let mut cpu = CPU::new();
