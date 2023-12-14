@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+//#![cfg_attr(not(test), no_std)]
 #![cfg_attr(feature = "nightly", feature(test))]
 #![cfg(feature = "nightly")]
 extern crate test;
@@ -483,6 +483,17 @@ impl AddressingMode {
     }
 }
 
+/// List of conditions
+#[derive(Clone, Debug, Copy, PartialEq, Default)]
+enum Condition {
+    #[default]
+    Always,
+    Carry(bool),
+    Equal(bool),
+    Minus(bool),
+    Overflow(bool),
+}
+
 /// Internal state machine
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
 enum State {
@@ -497,12 +508,16 @@ enum State {
     Brk,
     Ld(Register, AddressingMode),
     St(Register, AddressingMode),
+    Jsr(AddressingMode),
+    Jmp(AddressingMode),
+    Bit(AddressingMode),
     Carry(bool),
     IntDisable(bool),
     Decimal(bool),
     ClearOverflow,
     Sep(bool),
     PushAddress(AddressingMode),
+    Branch(Condition),
     Rti,
     Rts,
     Nop,
@@ -560,6 +575,9 @@ pub struct CPU {
     /// Temporary scratch register for internal use.
     /// Used for addressing instructions
     scratch: u16,
+    /// Temporary scratch register for internal use.
+    /// Used for addressing instructions
+    scratch2: u16,
 }
 
 impl Default for CPU {
@@ -583,6 +601,7 @@ impl Default for CPU {
             signals: Signals::default(),
             state: State::default(),
             scratch: 0,
+            scratch2: 0,
         }
     }
 }
@@ -787,10 +806,13 @@ impl CPU {
                     0x00 => State::Brk,
                     0x18 => State::Carry(false),
                     0x1B => State::Tcs,
+                    0x20 => State::Jsr(AddressingMode::Absolute),
+                    0x2C => State::Bit(AddressingMode::Absolute),
                     0x38 => State::Carry(true),
                     0x3B => State::Tsc,
                     0x40 => State::Rti,
                     0x42 => State::Wdm,
+                    0x4C => State::Jmp(AddressingMode::Absolute),
                     0x58 => State::IntDisable(false),
                     0x5B => State::Tcd,
                     0x60 => State::Rts,
@@ -823,12 +845,14 @@ impl CPU {
                     0xBB => State::Transfer(Register::Y, Register::X),
                     0xC2 => State::Sep(false),
                     0xCB => State::Wai,
+                    0xD0 => State::Branch(Condition::Equal(false)),
                     0xD4 => State::PushAddress(AddressingMode::Absolute),
                     0xD8 => State::Decimal(false),
                     0xDB => State::Stp,
                     0xE2 => State::Sep(true),
                     0xEA => State::Nop,
                     0xEB => State::Xba,
+                    0xF0 => State::Branch(Condition::Equal(true)),
                     0xF4 => State::PushAddress(AddressingMode::Immediate),
                     0xF8 => State::Decimal(true),
                     0xFB => State::Xce,
@@ -1189,6 +1213,42 @@ impl CPU {
                 }
                 _ => unreachable!(),
             },
+            State::Branch(cond) => match self.tcu {
+                1 => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let offset = system.read(effective, AddressType::Program, &self.signals);
+                    self.scratch = offset as u16;
+                    self.scratch2 = self.pc;
+                    self.pc = self.pc.wrapping_add(1);
+                    
+                    let taken = match cond {
+                        Condition::Always => true,
+                        Condition::Equal(v) => self.flags.zero == v,
+                        Condition::Carry(v) => self.flags.carry == v,
+                        Condition::Minus(v) => self.flags.negative == v,
+                        Condition::Overflow(v) => self.flags.overflow == v,
+                    };
+
+                    if !taken {
+                        self.state = State::Fetch;
+                    }
+                }
+                2 => {
+                    let effective = ((self.pbr as u32) << 16) | (self.scratch2 as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                    let ba = self.pc.wrapping_add_signed((self.scratch as i8).into());
+                    self.pc = ba;
+                    if self.pc & 0xff00 == ba & 0xff00 {
+                        self.state = State::Fetch;
+                    }
+                }
+                3 => {
+                    let effective = ((self.pbr as u32) << 16) | (self.scratch2 as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                    self.state = State::Fetch;
+                }
+                _ => unreachable!(),
+            }
             State::Rts => match self.tcu {
                 1 | 2 => {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
@@ -1248,6 +1308,89 @@ impl CPU {
                 }
                 _ => unreachable!(),
             },
+            State::Jsr(addr_mode) => match (addr_mode, self.tcu) {
+                (AddressingMode::Absolute, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.scratch).set(value);
+                },
+                (AddressingMode::Absolute, 2) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    ByteRef::High(&mut self.scratch).set(value);
+                }
+                (AddressingMode::Absolute, 3) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                }
+                (AddressingMode::Absolute, 4) => {
+                    let value = ByteRef::High(&mut self.pc).get();
+                    self.stack_push(system, value, false);
+                }
+                (AddressingMode::Absolute, 5) => {
+                    let value = ByteRef::Low(&mut self.pc).get();
+                    self.stack_push(system, value, false);
+                    self.pc = self.scratch;
+                    self.state = State::Fetch;
+                }
+                _ => unimplemented!("jsr {:?} {}", addr_mode, self.tcu),
+            }
+            State::Jmp(addr_mode) => match (addr_mode, self.tcu) {
+                (AddressingMode::Absolute, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.scratch).set(value);
+                },
+                (AddressingMode::Absolute, 2) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    ByteRef::High(&mut self.scratch).set(value);
+                    self.pc = self.scratch;
+                    self.state = State::Fetch;
+                }
+                _ => todo!("jmp {addr_mode:?} {}", self.tcu),
+            },
+            State::Bit(addr_mode) => match (addr_mode, self.tcu, self.a_width()) {
+                (AddressingMode::Absolute, 1, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.scratch).set(value);
+                },
+                (AddressingMode::Absolute, 2, _) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::High(&mut self.scratch).set(value);
+                }
+                (AddressingMode::Absolute, 3, aw) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.scratch as u32);
+                    let value = system.read(effective, AddressType::Data, &self.signals);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    let v = a & value;
+                    ByteRef::Low(&mut self.scratch2).set(v);
+
+                    if aw == 8 {
+                        self.flags.zero = v == 0;
+                        self.flags.negative = (v >> 7) == 1;
+                        self.flags.overflow = (v >> 6) & 1 == 1;
+                        self.state = State::Fetch;
+                    }
+                }
+                (AddressingMode::Absolute, 4, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | ((self.scratch + 1) as u32);
+                    let value = system.read(effective, AddressType::Data, &self.signals);
+                    let a = ByteRef::High(&mut self.a).get();
+                    ByteRef::High(&mut self.scratch2).set(a & value);
+                    self.flags.zero = self.scratch2 == 0;
+                    self.flags.negative = (self.scratch2 >> 15) == 1;
+                    self.flags.overflow = (self.scratch2 >> 14) & 1 == 1;
+                    self.state = State::Fetch;
+                }
+                (addr_mode, tcu, aw) => todo!("bit {addr_mode:?} {tcu} {aw}"),
+            }
             _ => todo!("{:?}", self.state),
         }
     }
