@@ -5,6 +5,8 @@ authors = ["katkosmos <kat@katkosmos.dev>"]
 keywords = ["6502", "65816", "wdc", "mos", "65c02"]
 categories = ["emulators", "no-std", "no-std::no-alloc"]
 repository = "https://gitlab.com/katkosmos/w65c816-rs"
+homepage = "https://gitlab.com/katkosmos/w65c816-rs"
+documentation = "https://docs.rs/w65c816"
 license = "MIT"
 readme = "README.md"
 
