@@ -1,5 +1,12 @@
 [package]
 name = "w65c816"
+description = "An emulator for the WDC W65C816S, a 16-bit derivative of the 6502."
+authors = ["katkosmos <kat@katkosmos.dev>"]
+keywords = ["6502", "65816", "wdc", "mos", "65c02"]
+categories = ["emulators", "no-std", "no-std::no-alloc"]
+repository = "https://gitlab.com/katkosmos/w65c816-rs"
+license = "MIT"
+
 version = "0.1.0"
 edition = "2021"
 
