@@ -6,6 +6,7 @@ keywords = ["6502", "65816", "wdc", "mos", "65c02"]
 categories = ["emulators", "no-std", "no-std::no-alloc"]
 repository = "https://gitlab.com/katkosmos/w65c816-rs"
 license = "MIT"
+readme = "README.md"
 
 version = "0.1.0"
 edition = "2021"
