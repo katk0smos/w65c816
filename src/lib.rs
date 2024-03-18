@@ -1,4 +1,4 @@
-//#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_std)]
 #![cfg_attr(feature = "nightly", feature(test))]
 #![cfg(feature = "nightly")]
 extern crate test;
@@ -82,6 +82,18 @@ pub enum Register {
     A,
     X,
     Y,
+}
+
+/// Extended CPU Register
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ExtRegister {
+    A,
+    X,
+    Y,
+    P,
+    D,
+    Pbr,
+    Dbr,
 }
 
 /// CPU Signals
@@ -295,6 +307,7 @@ impl Flags {
 enum AddressingMode {
     #[default]
     Implied,
+    Accumulator,
     Immediate,
     Absolute,
     Direct,
@@ -511,6 +524,16 @@ enum State {
     Jsr(AddressingMode),
     Jmp(AddressingMode),
     Bit(AddressingMode),
+    Adc(AddressingMode),
+    Eor(AddressingMode),
+    Ora(AddressingMode),
+    And(AddressingMode),
+    Asl(AddressingMode),
+    Lsr(AddressingMode),
+    Ror(AddressingMode),
+    Rol(AddressingMode),
+    Cmp(Register, AddressingMode),
+    Dec(Register),
     Carry(bool),
     IntDisable(bool),
     Decimal(bool),
@@ -518,6 +541,8 @@ enum State {
     Sep(bool),
     PushAddress(AddressingMode),
     Branch(Condition),
+    Push(ExtRegister),
+    Pull(ExtRegister),
     Rti,
     Rts,
     Nop,
@@ -804,28 +829,47 @@ impl CPU {
 
                 self.state = match self.ir {
                     0x00 => State::Brk,
+                    0x08 => State::Push(ExtRegister::P),
+                    0x09 => State::Ora(AddressingMode::Immediate),
+                    0x0A => State::Asl(AddressingMode::Accumulator),
+                    0x0B => State::Push(ExtRegister::D),
                     0x18 => State::Carry(false),
                     0x1B => State::Tcs,
                     0x20 => State::Jsr(AddressingMode::Absolute),
+                    0x28 => State::Pull(ExtRegister::P),
+                    0x29 => State::And(AddressingMode::Immediate),
+                    0x2A => State::Rol(AddressingMode::Accumulator),
+                    0x2B => State::Pull(ExtRegister::D),
                     0x2C => State::Bit(AddressingMode::Absolute),
                     0x38 => State::Carry(true),
                     0x3B => State::Tsc,
                     0x40 => State::Rti,
                     0x42 => State::Wdm,
+                    0x48 => State::Push(ExtRegister::A),
+                    0x49 => State::Eor(AddressingMode::Immediate),
+                    0x4A => State::Lsr(AddressingMode::Accumulator),
+                    0x4B => State::Push(ExtRegister::Pbr),
                     0x4C => State::Jmp(AddressingMode::Absolute),
                     0x58 => State::IntDisable(false),
+                    0x5A => State::Push(ExtRegister::Y),
                     0x5B => State::Tcd,
                     0x60 => State::Rts,
                     0x62 => State::PushAddress(AddressingMode::Relative),
+                    0x68 => State::Pull(ExtRegister::A),
+                    0x69 => State::Adc(AddressingMode::Immediate),
+                    0x6A => State::Ror(AddressingMode::Accumulator),
                     0x78 => State::IntDisable(true),
+                    0x7A => State::Pull(ExtRegister::Y),
                     0x7B => State::Tdc,
                     0x84 => State::St(Register::Y, AddressingMode::Direct),
                     0x85 => State::St(Register::A, AddressingMode::Direct),
                     0x86 => State::St(Register::X, AddressingMode::Direct),
                     0x8A => State::Transfer(Register::X, Register::A),
+                    0x8B => State::Push(ExtRegister::Dbr),
                     0x8C => State::St(Register::Y, AddressingMode::Absolute),
                     0x8D => State::St(Register::A, AddressingMode::Absolute),
                     0x8E => State::St(Register::X, AddressingMode::Absolute),
+                    0x90 => State::Branch(Condition::Carry(false)),
                     0x98 => State::Transfer(Register::Y, Register::A),
                     0x9A => State::Txs,
                     0x9B => State::Transfer(Register::X, Register::Y),
@@ -837,24 +881,32 @@ impl CPU {
                     0xA8 => State::Transfer(Register::A, Register::Y),
                     0xA9 => State::Ld(Register::A, AddressingMode::Immediate),
                     0xAA => State::Transfer(Register::A, Register::X),
+                    0xAB => State::Pull(ExtRegister::Dbr),
                     0xAC => State::Ld(Register::Y, AddressingMode::Absolute),
                     0xAD => State::Ld(Register::A, AddressingMode::Absolute),
                     0xAE => State::Ld(Register::X, AddressingMode::Absolute),
+                    0xB0 => State::Branch(Condition::Carry(true)),
                     0xB8 => State::ClearOverflow,
                     0xBA => State::Tsx,
                     0xBB => State::Transfer(Register::Y, Register::X),
+                    0xC0 => State::Cmp(Register::Y, AddressingMode::Immediate),
                     0xC2 => State::Sep(false),
+                    0xC9 => State::Cmp(Register::A, AddressingMode::Immediate),
+                    0xCA => State::Dec(Register::X),
                     0xCB => State::Wai,
                     0xD0 => State::Branch(Condition::Equal(false)),
                     0xD4 => State::PushAddress(AddressingMode::Absolute),
                     0xD8 => State::Decimal(false),
+                    0xDA => State::Push(ExtRegister::X),
                     0xDB => State::Stp,
+                    0xE0 => State::Cmp(Register::X, AddressingMode::Immediate),
                     0xE2 => State::Sep(true),
                     0xEA => State::Nop,
                     0xEB => State::Xba,
                     0xF0 => State::Branch(Condition::Equal(true)),
                     0xF4 => State::PushAddress(AddressingMode::Immediate),
                     0xF8 => State::Decimal(true),
+                    0xFA => State::Pull(ExtRegister::X),
                     0xFB => State::Xce,
                     _ => todo!("{:02x}", self.ir),
                 }
@@ -1218,8 +1270,8 @@ impl CPU {
                     let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                     let offset = system.read(effective, AddressType::Program, &self.signals);
                     self.scratch = offset as u16;
-                    self.scratch2 = self.pc;
                     self.pc = self.pc.wrapping_add(1);
+                    self.scratch2 = self.pc;
                     
                     let taken = match cond {
                         Condition::Always => true,
@@ -1390,6 +1442,405 @@ impl CPU {
                     self.state = State::Fetch;
                 }
                 (addr_mode, tcu, aw) => todo!("bit {addr_mode:?} {tcu} {aw}"),
+            }
+            State::Adc(addr_mode) => match (addr_mode, self.tcu, self.a_width()) {
+                (AddressingMode::Immediate, 1, 8) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    let a_word = (a as u16).wrapping_add(value as u16);
+                    let res = a_word as u8;
+                    ByteRef::Low(&mut self.a).set(res);
+                    self.flags.zero = res == 0;
+                    self.flags.negative = (res >> 7) != 0;
+                    self.flags.carry = a_word > 0xff;
+                    self.flags.overflow = (value^res)&(a^res)&0x80 != 0;
+                    self.state = State::Fetch;
+                }
+                (AddressingMode::Immediate, 1, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    ByteRef::Low(&mut self.scratch).set(value);
+                }
+                (AddressingMode::Immediate, 2, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    ByteRef::High(&mut self.scratch).set(value);
+                    self.pc = self.pc.wrapping_add(1);
+
+                    let a = self.a;
+                    let value = self.scratch;
+                    let a_word = (a as u32).wrapping_add(value as u32);
+                    let res = a_word as u16;
+                    self.a = res;
+
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) != 0;
+                    self.flags.carry = a_word > 0xffff;
+                    self.flags.overflow = (value^res)&(a^res)&0x8000 != 0;
+                    self.state = State::Fetch;
+                }
+                (am, tcu, aw) => todo!("eor {am:?} {tcu} {aw}"),
+            },
+            State::Eor(addr_mode) => match (addr_mode, self.tcu, self.a_width()) {
+                (AddressingMode::Immediate, 1, 8) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    let a = a ^ value;
+                    ByteRef::Low(&mut self.a).set(a);
+                    self.flags.zero = a == 0;
+                    self.flags.negative = (a >> 7) != 0;
+                    self.state = State::Fetch;
+                }
+                (AddressingMode::Immediate, 1, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    ByteRef::Low(&mut self.a).set(a ^ value);
+                }
+                (AddressingMode::Immediate, 2, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::High(&mut self.a).get();
+                    ByteRef::High(&mut self.a).set(a ^ value);
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) != 0;
+                    self.state = State::Fetch;
+                }
+                (am, tcu, aw) => todo!("eor {am:?} {tcu} {aw}"),
+            },
+            State::Ora(addr_mode) => match (addr_mode, self.tcu, self.a_width()) {
+                (AddressingMode::Immediate, 1, 8) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    let a = a | value;
+                    ByteRef::Low(&mut self.a).set(a);
+                    self.flags.zero = a == 0;
+                    self.flags.negative = (a >> 7) != 0;
+                    self.state = State::Fetch;
+                }
+                (AddressingMode::Immediate, 1, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    ByteRef::Low(&mut self.a).set(a | value);
+                }
+                (AddressingMode::Immediate, 2, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::High(&mut self.a).get();
+                    ByteRef::High(&mut self.a).set(a | value);
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) != 0;
+                    self.state = State::Fetch;
+                }
+                (am, tcu, aw) => todo!("eor {am:?} {tcu} {aw}"),
+            },
+            State::And(addr_mode) => match (addr_mode, self.tcu, self.a_width()) {
+                (AddressingMode::Immediate, 1, 8) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    let a = a & value;
+                    ByteRef::Low(&mut self.a).set(a);
+                    self.flags.zero = a == 0;
+                    self.flags.negative = (a >> 7) != 0;
+                    self.state = State::Fetch;
+                }
+                (AddressingMode::Immediate, 1, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::Low(&mut self.a).get();
+                    ByteRef::Low(&mut self.a).set(a & value);
+                }
+                (AddressingMode::Immediate, 2, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let value = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+                    let a = ByteRef::High(&mut self.a).get();
+                    ByteRef::High(&mut self.a).set(a & value);
+                    self.flags.zero = self.a == 0;
+                    self.flags.negative = (self.a >> 15) != 0;
+                    self.state = State::Fetch;
+                }
+                (am, tcu, aw) => todo!("eor {am:?} {tcu} {aw}"),
+            },
+            State::Dec(reg) => match self.tcu {
+                1 => {
+                    let (aw, iw) = (self.a_width(), self.index_width());
+                    let (r, w) = match reg {
+                        Register::A => (&mut self.a, aw),
+                        Register::X => (&mut self.x, iw),
+                        Register::Y => (&mut self.y, iw),
+                    };
+                    
+                    let (z, n) = if w == 8 {
+                        let v = ByteRef::Low(r).get() - 1;
+                        ByteRef::Low(r).set(v);
+                        (v == 0, (v >> 7) != 0)
+                    } else {
+                        *r -= 1;
+                        (*r == 0, (*r >> 15) != 0)
+                    };
+
+                    self.flags.zero = z;
+                    self.flags.negative = n;
+
+                    self.state = State::Fetch;
+                }
+                _ => unreachable!(),
+            }
+            State::Asl(am) => match (am, self.tcu) {
+                (AddressingMode::Accumulator, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+
+                    if self.a_width() == 8 {
+                        let a = ByteRef::Low(&mut self.a).get();
+                        
+                        let bit = a & 0x80 != 0;
+                        let a = a << 1;
+
+                        self.flags.carry = bit;
+                        self.flags.negative = a & 0x80 != 0;
+                        self.flags.zero = a == 0;
+
+                        ByteRef::Low(&mut self.a).set(a);
+                    } else {
+                        self.flags.carry = self.a & 0x8000 != 0;
+                        self.a <<= 1;
+                        self.flags.negative = self.a & 0x8000 != 0;
+                        self.flags.zero = self.a == 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+                _ => todo!("{:?} {}", am, self.tcu),
+            }
+            State::Lsr(am) => match (am, self.tcu) {
+                (AddressingMode::Accumulator, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+
+                    if self.a_width() == 8 {
+                        let a = ByteRef::Low(&mut self.a).get();
+                        
+                        let bit = a & 1 != 0;
+                        let a = a >> 1;
+
+                        self.flags.carry = bit;
+                        self.flags.negative = a & 0x80 != 0;
+                        self.flags.zero = a == 0;
+
+                        ByteRef::Low(&mut self.a).set(a);
+                    } else {
+                        self.flags.carry = self.a & 1 != 0;
+                        self.a >>= 1;
+                        self.flags.negative = self.a & 0x8000 != 0;
+                        self.flags.zero = self.a == 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+                _ => todo!("{:?} {}", am, self.tcu),
+            }
+            State::Rol(am) => match (am, self.tcu) {
+                (AddressingMode::Accumulator, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+
+                    if self.a_width() == 8 {
+                        let a = ByteRef::Low(&mut self.a).get();
+                        
+                        let bit = a & 0x80 != 0;
+                        let mut a = a << 1;
+                        if self.flags.carry {
+                            a |= 1;
+                        }
+
+                        self.flags.carry = bit;
+                        self.flags.negative = a & 0x80 != 0;
+                        self.flags.zero = a == 0;
+
+                        ByteRef::Low(&mut self.a).set(a);
+                    } else {
+                        let c = self.flags.carry;
+                        self.flags.carry = self.a & 0x8000 != 0;
+                        self.a <<= 1;
+                        if c {
+                            self.a |= 1;
+                        }
+                        self.flags.negative = self.a & 0x8000 != 0;
+                        self.flags.zero = self.a == 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+                _ => todo!("{:?} {}", am, self.tcu),
+            }
+            State::Ror(am) => match (am, self.tcu) {
+                (AddressingMode::Accumulator, 1) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+
+                    if self.a_width() == 8 {
+                        let a = ByteRef::Low(&mut self.a).get();
+                        
+                        let bit = a & 1 != 0;
+                        let mut a = a >> 1;
+                        if self.flags.carry {
+                            a |= 0x80;
+                        }
+
+                        self.flags.carry = bit;
+                        self.flags.negative = a & 0x80 != 0;
+                        self.flags.zero = a == 0;
+
+                        ByteRef::Low(&mut self.a).set(a);
+                    } else {
+                        let c = self.flags.carry;
+                        self.flags.carry = self.a & 1 != 0;
+                        self.a >>= 1;
+                        if c {
+                            self.a |= 0x8000;
+                        }
+                        self.flags.negative = self.a & 0x8000 != 0;
+                        self.flags.zero = self.a == 0;
+                    }
+
+                    self.state = State::Fetch;
+                }
+                _ => todo!("{:?} {}", am, self.tcu),
+            }
+            State::Cmp(r, am) => match (am, self.tcu, match r {
+                Register::A => self.a_width(),
+                Register::X | Register::Y => self.index_width(),
+            }) {
+                (AddressingMode::Immediate, 1, 8) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    let v = system.read(effective, AddressType::Program, &self.signals);
+                    self.pc = self.pc.wrapping_add(1);
+
+                    let r = ByteRef::Low(match r {
+                        Register::A => &mut self.a,
+                        Register::X => &mut self.x,
+                        Register::Y => &mut self.y,
+                    }).get();
+                    let res = r - v;
+
+                    self.flags.carry = r >= v;
+                    self.flags.negative = res & 0x80 != 0;
+                    self.flags.zero = res == 0;
+
+                    self.state = State::Fetch;
+                }
+                (AddressingMode::Immediate, 1, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    ByteRef::Low(&mut self.scratch).set(system.read(effective, AddressType::Program, &self.signals));
+                    self.pc = self.pc.wrapping_add(1);
+                }
+                (AddressingMode::Immediate, 2, 16) => {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    ByteRef::High(&mut self.scratch).set(system.read(effective, AddressType::Program, &self.signals));
+                    self.pc = self.pc.wrapping_add(1);
+                    
+                    let r = match r {
+                        Register::A => self.a,
+                        Register::X => self.x,
+                        Register::Y => self.y,
+                    };
+                    let res = r - self.scratch;
+
+                    self.flags.carry = r >= self.scratch;
+                    self.flags.negative = res & 0x8000 != 0;
+                    self.flags.zero = res == 0;
+
+                    self.state = State::Fetch;
+                }
+                _ => todo!("{:?} {:?} {:?}", am, self.tcu, self.a_width()),
+            }
+            State::Push(reg) => {
+                if self.tcu == 1 {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                    return;
+                }
+
+                let (reg_size, mut reg_value) = match reg {
+                    ExtRegister::A => (self.a_width(), self.a),
+                    ExtRegister::X => (self.index_width(), self.x),
+                    ExtRegister::Y => (self.index_width(), self.y),
+                    ExtRegister::Dbr => (8, self.dbr as u16),
+                    ExtRegister::Pbr => (8, self.pbr as u16),
+                    ExtRegister::P => (8, self.p() as u16),
+                    ExtRegister::D => (16, self.d),
+                };
+
+                match self.tcu {
+                    2 => {
+                        let v = ByteRef::High(&mut reg_value).get();
+                        self.stack_push(system, v, false);
+                        if reg_size == 8 {
+                            self.state = State::Fetch;
+                        }
+                    }
+                    3 => {
+                        let v = ByteRef::Low(&mut reg_value).get();
+                        self.stack_push(system, v, false);
+                        self.state = State::Fetch;
+                    }
+                    _ => unimplemented!(),
+                }
+            }
+            State::Pull(reg) => {
+                if self.tcu <= 2 {
+                    let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
+                    system.read(effective, AddressType::Invalid, &self.signals);
+                    return;
+                }
+
+                let reg_size = match reg {
+                    ExtRegister::A => self.a_width(),
+                    ExtRegister::X => self.index_width(),
+                    ExtRegister::Y => self.index_width(),
+                    ExtRegister::Dbr => 8,
+                    ExtRegister::Pbr => 8,
+                    ExtRegister::P => 8,
+                    ExtRegister::D => 16,
+                };
+
+                let val = self.stack_pop(system);
+
+                match (self.tcu, reg) {
+                    (3, ExtRegister::A) => ByteRef::Low(&mut self.a).set(val),
+                    (3, ExtRegister::X) => ByteRef::Low(&mut self.x).set(val),
+                    (3, ExtRegister::Y) => ByteRef::Low(&mut self.y).set(val),
+                    (3, ExtRegister::D) => ByteRef::Low(&mut self.d).set(val),
+                    (3, ExtRegister::Pbr) => self.pbr = val,
+                    (3, ExtRegister::Dbr) => self.dbr = val,
+                    (3, ExtRegister::P) => self.flags.set(val),
+                    (4, ExtRegister::A) => ByteRef::High(&mut self.a).set(val),
+                    (4, ExtRegister::X) => ByteRef::High(&mut self.x).set(val),
+                    (4, ExtRegister::Y) => ByteRef::High(&mut self.y).set(val),
+                    (4, ExtRegister::D) => ByteRef::High(&mut self.d).set(val),
+                    _ => unreachable!(),
+                }
+
+                if (self.tcu == 3 && reg_size == 8) || self.tcu == 4 {
+                    self.state = State::Fetch;
+                }
             }
             _ => todo!("{:?}", self.state),
         }
@@ -1583,6 +2034,11 @@ impl CPU {
 
     /// Returns the program bank register
     pub fn pbr(&self) -> u8 {
+        self.pbr
+    }
+
+    /// Returns the K register (pbr/program bank register)
+    pub fn k(&self) -> u8 {
         self.pbr
     }
 
