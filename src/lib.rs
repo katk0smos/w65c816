@@ -312,6 +312,7 @@ enum AddressingMode {
     Absolute,
     Direct,
     Relative,
+    StackRel,
 }
 
 impl AddressingMode {
@@ -407,6 +408,45 @@ impl AddressingMode {
                 }
                 _ => None,
             },
+            AddressingMode::StackRel => match cpu.tcu {
+                1 => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let offset = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    
+                    Some(TaggedByte::Address(Byte::Low(offset)))
+                }
+                2 => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
+                    None
+                }
+                3 => {
+                    let offset = ByteRef::Low(&mut cpu.scratch).get() as u16;
+                    let effective = if cpu.flags.emulation {
+                        let mut s = ByteRef::Low(&mut cpu.s).get() as u16 + offset;
+                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
+                    } else {
+                        cpu.s.wrapping_add(offset)
+                    };
+                    
+                    let data = system.read(effective as u32, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(data)))
+                }
+                4 => {
+                    let offset = ByteRef::Low(&mut cpu.scratch).get() as u16 + 1;
+                    let effective = if cpu.flags.emulation {
+                        let mut s = ByteRef::Low(&mut cpu.s).get() as u16 + offset;
+                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
+                    } else {
+                        cpu.s.wrapping_add(offset)
+                    };
+                    
+                    let data = system.read(effective as u32, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(data)))
+                }
+                _ => None,
+            }
             _ => todo!(),
         }
     }
@@ -521,6 +561,7 @@ enum State {
     Brk,
     Ld(Register, AddressingMode),
     St(Register, AddressingMode),
+    Stz(AddressingMode),
     Jsr(AddressingMode),
     Jmp(AddressingMode),
     Bit(AddressingMode),
@@ -855,6 +896,7 @@ impl CPU {
                     0x5B => State::Tcd,
                     0x60 => State::Rts,
                     0x62 => State::PushAddress(AddressingMode::Relative),
+                    0x63 => State::Adc(AddressingMode::StackRel),
                     0x68 => State::Pull(ExtRegister::A),
                     0x69 => State::Adc(AddressingMode::Immediate),
                     0x6A => State::Ror(AddressingMode::Accumulator),
@@ -873,8 +915,10 @@ impl CPU {
                     0x98 => State::Transfer(Register::Y, Register::A),
                     0x9A => State::Txs,
                     0x9B => State::Transfer(Register::X, Register::Y),
+                    0x9C => State::Stz(AddressingMode::Absolute),
                     0xA0 => State::Ld(Register::Y, AddressingMode::Immediate),
                     0xA2 => State::Ld(Register::X, AddressingMode::Immediate),
+                    0xA3 => State::Ld(Register::A, AddressingMode::StackRel),
                     0xA4 => State::Ld(Register::Y, AddressingMode::Direct),
                     0xA5 => State::Ld(Register::A, AddressingMode::Direct),
                     0xA6 => State::Ld(Register::X, AddressingMode::Direct),
@@ -1171,6 +1215,23 @@ impl CPU {
                         Register::X | Register::Y => self.index_width(),
                     } == 8
                     {
+                        self.state = State::Fetch;
+                    }
+                }
+                Some(TaggedByte::Data(Byte::High(_))) => {
+                    self.state = State::Fetch;
+                }
+                _ => (),
+            },
+            State::Stz(addr_mode) => match addr_mode.write(
+                self,
+                system,
+                0,
+            ) {
+                Some(TaggedByte::Address(Byte::Low(x))) => ByteRef::Low(&mut self.scratch).set(x),
+                Some(TaggedByte::Address(Byte::High(x))) => ByteRef::High(&mut self.scratch).set(x),
+                Some(TaggedByte::Data(Byte::Low(_x))) => {
+                    if self.a_width() == 8 {
                         self.state = State::Fetch;
                     }
                 }
@@ -1481,6 +1542,38 @@ impl CPU {
                     self.flags.carry = a_word > 0xffff;
                     self.flags.overflow = (value^res)&(a^res)&0x8000 != 0;
                     self.state = State::Fetch;
+                }
+                (am, _, aw) => match am.read(self, system) {
+                    Some(TaggedByte::Data(Byte::Low(value))) => {
+                        ByteRef::Low(&mut self.scratch2).set(value);
+                        if aw == 8 {
+                            let a = ByteRef::Low(&mut self.a).get();
+                            let a_word = (a as u16).wrapping_add(value as u16);
+                            let res = a_word as u8;
+                            ByteRef::Low(&mut self.a).set(res);
+                            self.flags.zero = res == 0;
+                            self.flags.negative = (res >> 7) != 0;
+                            self.flags.carry = a_word > 0xff;
+                            self.flags.overflow = (value^res)&(a^res)&0x80 != 0;
+                            self.state = State::Fetch;
+                        }
+                    }
+                    Some(TaggedByte::Data(Byte::High(value))) => {
+                        ByteRef::High(&mut self.scratch2).set(value);
+
+                        let a = self.a;
+                        let value = self.scratch2;
+                        let a_word = (a as u32).wrapping_add(value as u32);
+                        let res = a_word as u16;
+                        self.a = res;
+
+                        self.flags.zero = self.a == 0;
+                        self.flags.negative = (self.a >> 15) != 0;
+                        self.flags.carry = a_word > 0xffff;
+                        self.flags.overflow = (value^res)&(a^res)&0x8000 != 0;
+                        self.state = State::Fetch;
+                    }
+                    _ => unimplemented!(),
                 }
                 (am, tcu, aw) => todo!("eor {am:?} {tcu} {aw}"),
             },
