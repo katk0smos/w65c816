@@ -470,7 +470,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 71
     (todo, AddressingMode::Implied), // 72
     (todo, AddressingMode::Implied), // 73
-    (todo, AddressingMode::Implied), // 74
+    (stz, AddressingMode::DirectIndexedX), // 74
     (todo, AddressingMode::Implied), // 75
     (todo, AddressingMode::Implied), // 76
     (todo, AddressingMode::Implied), // 77
@@ -483,13 +483,13 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 7e
     (todo, AddressingMode::Implied), // 7f
     (todo, AddressingMode::Implied), // 80
-    (todo, AddressingMode::Implied), // 81
+    (sta, AddressingMode::DirectIndirectX), // 81
     (todo, AddressingMode::Implied), // 82
-    (todo, AddressingMode::Implied), // 83
+    (sta, AddressingMode::StackRel), // 83
     (sty, AddressingMode::Direct), // 84
     (sta, AddressingMode::Direct), // 85
     (stx, AddressingMode::Direct), // 86
-    (todo, AddressingMode::Implied), // 87
+    (sta, AddressingMode::DirectIndirectLong), // 87
     (todo, AddressingMode::Implied), // 88
     (todo, AddressingMode::Implied), // 89
     (todo, AddressingMode::Implied), // 8a
@@ -499,21 +499,21 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (stx, AddressingMode::Absolute), // 8e
     (sta, AddressingMode::AbsoluteLong), // 8f
     (todo, AddressingMode::Implied), // 90
-    (todo, AddressingMode::Implied), // 91
-    (todo, AddressingMode::Implied), // 92
-    (todo, AddressingMode::Implied), // 93
-    (todo, AddressingMode::Implied), // 94
-    (todo, AddressingMode::Implied), // 95
-    (todo, AddressingMode::Implied), // 96
-    (todo, AddressingMode::Implied), // 97
+    (sta, AddressingMode::DirectIndirectIndexedY), // 91
+    (sta, AddressingMode::DirectIndirect), // 92
+    (sta, AddressingMode::StackRelIndirectIndexedY), // 93
+    (sty, AddressingMode::DirectIndexedX), // 94
+    (sta, AddressingMode::DirectIndexedX), // 95
+    (stx, AddressingMode::DirectIndexedY), // 96
+    (sta, AddressingMode::DirectIndirectLongIndexedY), // 97
     (todo, AddressingMode::Implied), // 98
-    (todo, AddressingMode::Implied), // 99
+    (sta, AddressingMode::AbsoluteIndexedY), // 99
     (todo, AddressingMode::Implied), // 9a
     (todo, AddressingMode::Implied), // 9b
     (stz, AddressingMode::Absolute), // 9c
-    (todo, AddressingMode::Implied), // 9d
-    (todo, AddressingMode::Implied), // 9e
-    (todo, AddressingMode::Implied), // 9f
+    (sta, AddressingMode::AbsoluteIndexedX), // 9d
+    (stz, AddressingMode::AbsoluteIndexedX), // 9e
+    (sta, AddressingMode::AbsoluteLongIndexedX), // 9f
     (ldy, AddressingMode::Immediate), // a0
     (todo, AddressingMode::Implied), // a1
     (ldx, AddressingMode::Immediate), // a2
