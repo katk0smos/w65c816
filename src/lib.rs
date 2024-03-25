@@ -71,21 +71,6 @@ impl AddressType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Interrupt {
-    Reset,
-    Nmi,
-    Irq,
-}
-
-/// CPU Register
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Register {
-    A,
-    X,
-    Y,
-}
-
 /// Extended CPU Register
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ExtRegister {
