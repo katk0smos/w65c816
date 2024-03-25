@@ -515,13 +515,13 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (stz, AddressingMode::AbsoluteIndexedX), // 9e
     (sta, AddressingMode::AbsoluteLongIndexedX), // 9f
     (ldy, AddressingMode::Immediate), // a0
-    (todo, AddressingMode::Implied), // a1
+    (lda, AddressingMode::DirectIndirectX), // a1
     (ldx, AddressingMode::Immediate), // a2
-    (todo, AddressingMode::Implied), // a3
+    (lda, AddressingMode::StackRel), // a3
     (ldy, AddressingMode::Direct), // a4
-    (todo, AddressingMode::Implied), // a5
+    (lda, AddressingMode::Direct), // a5
     (ldx, AddressingMode::Direct), // a6
-    (todo, AddressingMode::Implied), // a7
+    (lda, AddressingMode::DirectIndirectLong), // a7
     (todo, AddressingMode::Implied), // a8
     (lda, AddressingMode::Immediate), // a9
     (todo, AddressingMode::Implied), // aa
@@ -529,23 +529,23 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ldy, AddressingMode::Absolute), // ac
     (lda, AddressingMode::Absolute), // ad
     (ldx, AddressingMode::Absolute), // ae
-    (todo, AddressingMode::Implied), // af
+    (lda, AddressingMode::AbsoluteLong), // af
     (todo, AddressingMode::Implied), // b0
-    (todo, AddressingMode::Implied), // b1
-    (todo, AddressingMode::Implied), // b2
-    (todo, AddressingMode::Implied), // b3
-    (todo, AddressingMode::Implied), // b4
-    (todo, AddressingMode::Implied), // b5
-    (todo, AddressingMode::Implied), // b6
-    (todo, AddressingMode::Implied), // b7
+    (lda, AddressingMode::DirectIndirectIndexedY), // b1
+    (lda, AddressingMode::DirectIndirect), // b2
+    (lda, AddressingMode::StackRelIndirectIndexedY), // b3
+    (ldy, AddressingMode::DirectIndexedX), // b4
+    (lda, AddressingMode::DirectIndexedX), // b5
+    (ldx, AddressingMode::DirectIndexedY), // b6
+    (lda, AddressingMode::DirectIndirectLongIndexedY), // b7
     (clv, AddressingMode::Implied), // b8
-    (todo, AddressingMode::Implied), // b9
+    (lda, AddressingMode::AbsoluteIndexedY), // b9
     (todo, AddressingMode::Implied), // ba
     (todo, AddressingMode::Implied), // bb
-    (todo, AddressingMode::Implied), // bc
-    (todo, AddressingMode::Implied), // bd
-    (todo, AddressingMode::Implied), // be
-    (todo, AddressingMode::Implied), // bf
+    (ldy, AddressingMode::AbsoluteIndexedX), // bc
+    (lda, AddressingMode::AbsoluteIndexedX), // bd
+    (ldx, AddressingMode::AbsoluteIndexedY), // be
+    (lda, AddressingMode::AbsoluteLongIndexedX), // bf
     (todo, AddressingMode::Implied), // c0
     (todo, AddressingMode::Implied), // c1
     (todo, AddressingMode::Implied), // c2
