@@ -70,8 +70,49 @@ fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+#[inline]
 fn jsr_al(cpu: &mut CPU, sys: &mut dyn System) {
-    todo!("jsr abs long");
+    match cpu.tcu {
+        1 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_addr).set(data);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        2 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            ByteRef::High(&mut cpu.temp_addr).set(data);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        3 => {
+            cpu.stack_push(sys, cpu.pbr, false);
+        }
+        4 => {
+            let mut s = cpu.s.wrapping_add(1);
+            if cpu.flags.emulation {
+                ByteRef::High(&mut s).set(0x01);
+            }
+            sys.read(s as u32, AddressType::Invalid, &cpu.signals);
+        }
+        5 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            cpu.temp_bank = data;
+        }
+        6 => {
+            let pc = ByteRef::High(&mut cpu.pc).get();
+            cpu.stack_push(sys, pc, false);
+        }
+        7 => {
+            let pc = ByteRef::Low(&mut cpu.pc).get();
+            cpu.stack_push(sys, pc, false);
+            cpu.pc = cpu.temp_addr;
+            cpu.pbr = cpu.temp_bank;
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
 }
 
 fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
@@ -123,7 +164,7 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             cpu.pc = cpu.temp_data;
             cpu.state = State::Fetch;
         }
-        _ => unimplemented!(),
+        _ => unreachable!(),
     }
 }
 
