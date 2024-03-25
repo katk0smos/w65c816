@@ -2,22 +2,25 @@
 An emulator for Western Design Center's W65C816S, a 16-bit derivative of the
 WDC W65C02S, which is itself a derivative of the MOS 6502.
 
+I'm developing this as there doesn't appear to be any existing standalone '816
+cores in any language, and certainly not at the level of emulation I'm doing
+(though we can go deeper!).
+
 ## Warning
 This emulator is very WIP and is not complete. Many instructions are missing,
-and ABORT support is spotty. Instruction implementations are somewhat tacked on,
-and maintaining will be pretty much impossible. For these reasons I'll be performing
-a full rewrite. This repo and crate exists to preserve my philosophy, good and bad,
-so that I can ensure the final code isn't spaghetti.
+and ABORT support is missing for many instructions.
 
 The external API is finalized, and you are free to base code off of this with
 the expectation that it will work at some point in the future.
 
 Current plans:
- - [ ] rewrite
+ - [ ] continue adding instructions
+ - [ ] continue adding addressing modes
+ - [ ] ensure ABORT is implemented for all instructions
+ - [ ] tests, tests, and more tests
 
-Current plan for the rewrite is to implement each addressing mode as a function
-rather than re-implementing it over-and-over in each instruction. I'd like to
-move the instruction implementations out of the main update function as well. I
-think sacrificing a small amount of memory to move ABORT support outside
-instructions would be worth it as well, just store register values during a
-fetch cycle and then restore if an ABORT occurs
+I am not providing a table showing currently implemented instructions due to
+the effort involved. You'll either have to open `src/instructions.rs` and look
+at the table there or just run some code and see if it panics. Not a great
+solution, I know. At some point all of the instructions will be implemented so
+this won't be a problem.

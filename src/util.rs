@@ -7,6 +7,7 @@ pub enum ByteRef<'a> {
 
 impl ByteRef<'_> {
     /// Gets the byte
+    #[inline(always)]
     pub fn get(&self) -> u8 {
         match self {
             ByteRef::Low(x) => (**x & 0xff) as u8,
@@ -15,6 +16,7 @@ impl ByteRef<'_> {
     }
 
     /// Sets the byte
+    #[inline(always)]
     pub fn set(&mut self, value: u8) {
         match self {
             ByteRef::Low(x) => **x = (**x & 0xff00) | (value as u16),
@@ -23,6 +25,7 @@ impl ByteRef<'_> {
     }
 
     /// Swap to the other byte
+    #[inline(always)]
     pub fn swap(self) -> Self {
         match self {
             ByteRef::Low(x) => ByteRef::High(x),
@@ -33,7 +36,9 @@ impl ByteRef<'_> {
 
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum TaggedByte {
+    /// Data byte
     Data(Byte),
+    /// Address byte (shouldn't really be used, but exposed nonetheless)
     Address(Byte),
 }
 
@@ -44,6 +49,7 @@ pub enum Byte {
 }
 
 impl From<Byte> for u8 {
+    #[inline(always)]
     fn from(x: Byte) -> u8 {
         match x {
             Byte::Low(x) | Byte::High(x) => x,
