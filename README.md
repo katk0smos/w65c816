@@ -3,8 +3,10 @@ An emulator for Western Design Center's W65C816S, a 16-bit derivative of the
 WDC W65C02S, which is itself a derivative of the MOS 6502.
 
 I'm developing this as there doesn't appear to be any existing standalone '816
-cores in any language, and certainly not at the level of emulation I'm doing
-(though we can go deeper!).
+cores in Rust, and certainly not at the level of emulation I'm doing
+(though we can go deeper!). For other programming languages, 816 cores seem
+pretty sparse, and as far as I know, none provide a bus-level cycle-accurate
+emulator with all signals.
 
 ## Warning
 This emulator is very WIP and is not complete. Many instructions are missing,
