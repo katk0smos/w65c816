@@ -966,6 +966,10 @@ impl CPU {
         self.flags.set(p);
         self.signals.m = self.flags.mem_sel;
         self.signals.x = self.flags.index_sel;
+        if self.m8() {
+            ByteRef::High(&mut self.x).set(0);
+            ByteRef::High(&mut self.y).set(0);
+        }
     }
 
     #[inline(always)]

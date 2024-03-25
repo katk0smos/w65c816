@@ -12,7 +12,7 @@ fn io(cpu: &mut CPU, sys: &mut dyn System) {
     let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
 }
 
-#[inline]
+#[inline(always)]
 fn implied(cpu: &mut CPU, sys: &mut dyn System) {
     AddressingMode::Implied.read(cpu, sys);
 
@@ -74,17 +74,57 @@ fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
             ByteRef::Low(&mut cpu.a).set(l);
+            cpu.flags.zero = l == 0;
             if cpu.a8() {
                 cpu.state = State::Fetch;
                 cpu.flags.negative = l >> 7 != 0;
-                cpu.flags.zero = l == 0;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
             ByteRef::High(&mut cpu.a).set(h);
             cpu.state = State::Fetch;
-            cpu.flags.negative = cpu.a >> 15 != 0;
-            cpu.flags.zero = cpu.a == 0;
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
+        }
+        _ => (),
+    }
+}
+
+fn ldx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            ByteRef::Low(&mut cpu.x).set(l);
+            cpu.flags.zero = l == 0;
+            if cpu.m8() {
+                cpu.state = State::Fetch;
+                cpu.flags.negative = l >> 7 != 0;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            ByteRef::High(&mut cpu.x).set(h);
+            cpu.state = State::Fetch;
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
+        }
+        _ => (),
+    }
+}
+
+fn ldy(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            ByteRef::Low(&mut cpu.y).set(l);
+            cpu.flags.zero = l == 0;
+            if cpu.m8() {
+                cpu.state = State::Fetch;
+                cpu.flags.negative = l >> 7 != 0;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            ByteRef::High(&mut cpu.y).set(h);
+            cpu.state = State::Fetch;
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
         }
         _ => (),
     }
@@ -255,6 +295,64 @@ fn sep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn rts(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    const RTS: AddressingMode = AddressingMode::Absolute;
+    const RTL: AddressingMode = AddressingMode::AbsoluteLong;
+
+    match (am, cpu.tcu) {
+        (_, 1 | 2) => io(cpu, sys),
+        (_, 3) => {
+            let data = cpu.stack_pop(sys);
+            ByteRef::Low(&mut cpu.pc).set(data);
+        }
+        (_, 4) => {
+            let data = cpu.stack_pop(sys);
+            ByteRef::High(&mut cpu.pc).set(data);
+        }
+        (RTS, 5) => {
+            let mut s = cpu.s.wrapping_add(1);
+            if cpu.flags.emulation {
+                ByteRef::High(&mut s).set(0x01);
+            }
+            sys.read(s as u32, AddressType::Invalid, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+            cpu.state = State::Fetch;
+        }
+        (RTL, 5) => {
+            let data = cpu.stack_pop(sys);
+            cpu.pbr = data;
+            cpu.pc = cpu.pc.wrapping_add(1);
+            cpu.state = State::Fetch;
+        }
+        _ => todo!()
+    }
+}
+
+fn rti(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 | 2 => io(cpu, sys),
+        3 => {
+            let data = cpu.stack_pop(sys);
+            cpu.set_p(data);
+        }
+        4 => {
+            let data = cpu.stack_pop(sys);
+            ByteRef::Low(&mut cpu.pc).set(data);
+        }
+        5 => {
+            let data = cpu.stack_pop(sys);
+            ByteRef::High(&mut cpu.pc).set(data);
+        }
+        6 => {
+            let data = cpu.stack_pop(sys);
+            cpu.pbr = data;
+            cpu.pc = cpu.pc.wrapping_add(1);
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 00
     (todo, AddressingMode::Implied), // 01
@@ -320,7 +418,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 3d
     (todo, AddressingMode::Implied), // 3e
     (todo, AddressingMode::Implied), // 3f
-    (todo, AddressingMode::Implied), // 40
+    (rti, AddressingMode::Implied), // 40
     (todo, AddressingMode::Implied), // 41
     (todo, AddressingMode::Implied), // 42
     (todo, AddressingMode::Implied), // 43
@@ -352,7 +450,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 5d
     (todo, AddressingMode::Implied), // 5e
     (todo, AddressingMode::Implied), // 5f
-    (todo, AddressingMode::Implied), // 60
+    (rts, AddressingMode::Absolute), // 60
     (todo, AddressingMode::Implied), // 61
     (todo, AddressingMode::Implied), // 62
     (todo, AddressingMode::Implied), // 63
@@ -363,7 +461,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 68
     (todo, AddressingMode::Implied), // 69
     (todo, AddressingMode::Implied), // 6a
-    (todo, AddressingMode::Implied), // 6b
+    (rts, AddressingMode::AbsoluteLong), // 6b
     (todo, AddressingMode::Implied), // 6c
     (todo, AddressingMode::Implied), // 6d
     (todo, AddressingMode::Implied), // 6e
@@ -416,21 +514,21 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 9d
     (todo, AddressingMode::Implied), // 9e
     (todo, AddressingMode::Implied), // 9f
-    (todo, AddressingMode::Implied), // a0
+    (ldy, AddressingMode::Immediate), // a0
     (todo, AddressingMode::Implied), // a1
-    (todo, AddressingMode::Implied), // a2
+    (ldx, AddressingMode::Immediate), // a2
     (todo, AddressingMode::Implied), // a3
-    (todo, AddressingMode::Implied), // a4
+    (ldy, AddressingMode::Direct), // a4
     (todo, AddressingMode::Implied), // a5
-    (todo, AddressingMode::Implied), // a6
+    (ldx, AddressingMode::Direct), // a6
     (todo, AddressingMode::Implied), // a7
     (todo, AddressingMode::Implied), // a8
     (lda, AddressingMode::Immediate), // a9
     (todo, AddressingMode::Implied), // aa
     (todo, AddressingMode::Implied), // ab
-    (todo, AddressingMode::Implied), // ac
+    (ldy, AddressingMode::Absolute), // ac
     (lda, AddressingMode::Absolute), // ad
-    (todo, AddressingMode::Implied), // ae
+    (ldx, AddressingMode::Absolute), // ae
     (todo, AddressingMode::Implied), // af
     (todo, AddressingMode::Implied), // b0
     (todo, AddressingMode::Implied), // b1
