@@ -21,6 +21,10 @@ fn implied(cpu: &mut CPU, sys: &mut dyn System) {
     }
 }
 
+// doesn't need to be implemented, implemented as a state in the state machine
+// so this is never actually called
+fn brk(_cpu: &mut CPU, _sys: &mut dyn System, _am: AddressingMode) {}
+
 fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
 }
@@ -353,8 +357,145 @@ fn rti(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+fn tax(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.m8() {
+            let data = ByteRef::Low(&mut cpu.a).get();
+            ByteRef::Low(&mut cpu.x).set(data);
+        } else {
+            cpu.x = cpu.a;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tay(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.m8() {
+            let data = ByteRef::Low(&mut cpu.a).get();
+            ByteRef::Low(&mut cpu.y).set(data);
+        } else {
+            cpu.y = cpu.a;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tcd(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        cpu.d = cpu.a;
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tcs(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        cpu.s = cpu.a;
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tdc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        cpu.a = cpu.d;
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tsc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        cpu.a = cpu.s;
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tsx(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.flags.emulation {
+            let byte = ByteRef::Low(&mut cpu.s).get();
+            ByteRef::Low(&mut cpu.x).set(byte);
+        } else {
+            cpu.x = cpu.s;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn txa(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.a8() {
+            let byte = ByteRef::Low(&mut cpu.x).get();
+            ByteRef::Low(&mut cpu.a).set(byte);
+        } else {
+            cpu.a = cpu.x;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn txs(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.flags.emulation {
+            let byte = ByteRef::Low(&mut cpu.x).get();
+            ByteRef::Low(&mut cpu.s).set(byte);
+        } else {
+            cpu.s = cpu.x;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn txy(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.flags.emulation {
+            let byte = ByteRef::Low(&mut cpu.x).get();
+            ByteRef::Low(&mut cpu.y).set(byte);
+        } else {
+            cpu.y = cpu.x;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tya(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.a8() {
+            let byte = ByteRef::Low(&mut cpu.y).get();
+            ByteRef::Low(&mut cpu.a).set(byte);
+        } else {
+            cpu.a = cpu.y;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tyx(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    if cpu.tcu == 2 {
+        if cpu.flags.emulation {
+            let byte = ByteRef::Low(&mut cpu.y).get();
+            ByteRef::Low(&mut cpu.x).set(byte);
+        } else {
+            cpu.x = cpu.y;
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
-    (todo, AddressingMode::Implied), // 00
+    (brk, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
+                                     // machine as State::Brk)
     (todo, AddressingMode::Implied), // 01
     (todo, AddressingMode::Implied), // 02
     (todo, AddressingMode::Implied), // 03
@@ -381,7 +522,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (clc, AddressingMode::Implied), // 18
     (todo, AddressingMode::Implied), // 19
     (todo, AddressingMode::Implied), // 1a
-    (todo, AddressingMode::Implied), // 1b
+    (tcs, AddressingMode::Implied), // 1b
     (todo, AddressingMode::Implied), // 1c
     (todo, AddressingMode::Implied), // 1d
     (todo, AddressingMode::Implied), // 1e
@@ -413,7 +554,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sec, AddressingMode::Implied), // 38
     (todo, AddressingMode::Implied), // 39
     (todo, AddressingMode::Implied), // 3a
-    (todo, AddressingMode::Implied), // 3b
+    (tsc, AddressingMode::Implied), // 3b
     (todo, AddressingMode::Implied), // 3c
     (todo, AddressingMode::Implied), // 3d
     (todo, AddressingMode::Implied), // 3e
@@ -445,7 +586,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (cli, AddressingMode::Implied), // 58
     (todo, AddressingMode::Implied), // 59
     (todo, AddressingMode::Implied), // 5a
-    (todo, AddressingMode::Implied), // 5b
+    (tcd, AddressingMode::Implied), // 5b
     (todo, AddressingMode::Implied), // 5c
     (todo, AddressingMode::Implied), // 5d
     (todo, AddressingMode::Implied), // 5e
@@ -477,7 +618,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sei, AddressingMode::Implied), // 78
     (todo, AddressingMode::Implied), // 79
     (todo, AddressingMode::Implied), // 7a
-    (todo, AddressingMode::Implied), // 7b
+    (tdc, AddressingMode::Implied), // 7b
     (todo, AddressingMode::Implied), // 7c
     (todo, AddressingMode::Implied), // 7d
     (todo, AddressingMode::Implied), // 7e
@@ -492,7 +633,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sta, AddressingMode::DirectIndirectLong), // 87
     (todo, AddressingMode::Implied), // 88
     (todo, AddressingMode::Implied), // 89
-    (todo, AddressingMode::Implied), // 8a
+    (txa, AddressingMode::Implied), // 8a
     (todo, AddressingMode::Implied), // 8b
     (sty, AddressingMode::Absolute), // 8c
     (sta, AddressingMode::Absolute), // 8d
@@ -506,10 +647,10 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sta, AddressingMode::DirectIndexedX), // 95
     (stx, AddressingMode::DirectIndexedY), // 96
     (sta, AddressingMode::DirectIndirectLongIndexedY), // 97
-    (todo, AddressingMode::Implied), // 98
+    (tya, AddressingMode::Implied), // 98
     (sta, AddressingMode::AbsoluteIndexedY), // 99
-    (todo, AddressingMode::Implied), // 9a
-    (todo, AddressingMode::Implied), // 9b
+    (txs, AddressingMode::Implied), // 9a
+    (txy, AddressingMode::Implied), // 9b
     (stz, AddressingMode::Absolute), // 9c
     (sta, AddressingMode::AbsoluteIndexedX), // 9d
     (stz, AddressingMode::AbsoluteIndexedX), // 9e
@@ -522,9 +663,9 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (lda, AddressingMode::Direct), // a5
     (ldx, AddressingMode::Direct), // a6
     (lda, AddressingMode::DirectIndirectLong), // a7
-    (todo, AddressingMode::Implied), // a8
+    (tay, AddressingMode::Implied), // a8
     (lda, AddressingMode::Immediate), // a9
-    (todo, AddressingMode::Implied), // aa
+    (tax, AddressingMode::Implied), // aa
     (todo, AddressingMode::Implied), // ab
     (ldy, AddressingMode::Absolute), // ac
     (lda, AddressingMode::Absolute), // ad
@@ -540,8 +681,8 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (lda, AddressingMode::DirectIndirectLongIndexedY), // b7
     (clv, AddressingMode::Implied), // b8
     (lda, AddressingMode::AbsoluteIndexedY), // b9
-    (todo, AddressingMode::Implied), // ba
-    (todo, AddressingMode::Implied), // bb
+    (tsx, AddressingMode::Implied), // ba
+    (tyx, AddressingMode::Implied), // bb
     (ldy, AddressingMode::AbsoluteIndexedX), // bc
     (lda, AddressingMode::AbsoluteIndexedX), // bd
     (ldx, AddressingMode::AbsoluteIndexedY), // be
