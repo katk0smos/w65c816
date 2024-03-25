@@ -70,8 +70,28 @@ fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            ByteRef::Low(&mut cpu.a).set(l);
+            if cpu.a8() {
+                cpu.state = State::Fetch;
+                cpu.flags.negative = l >> 7 != 0;
+                cpu.flags.zero = l == 0;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            ByteRef::High(&mut cpu.a).set(h);
+            cpu.state = State::Fetch;
+            cpu.flags.negative = cpu.a >> 15 != 0;
+            cpu.flags.zero = cpu.a == 0;
+        }
+        _ => (),
+    }
+}
+
 #[inline]
-fn jsr_al(cpu: &mut CPU, sys: &mut dyn System) {
+fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     match cpu.tcu {
         1 => {
             let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
@@ -116,10 +136,6 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System) {
 }
 
 fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
-    if am == AddressingMode::AbsoluteLong {
-        return jsr_al(cpu, sys);
-    }
-
     const ABS: AddressingMode = AddressingMode::Absolute;
     const IDX_IN: AddressingMode = AddressingMode::IndexedIndirectX;
 
@@ -226,7 +242,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 1f
     (jsr, AddressingMode::Absolute), // 20
     (todo, AddressingMode::Implied), // 21
-    (jsr, AddressingMode::AbsoluteLong), // 22
+    (jsr_al, AddressingMode::AbsoluteLong), // 22
     (todo, AddressingMode::Implied), // 23
     (todo, AddressingMode::Implied), // 24
     (todo, AddressingMode::Implied), // 25
@@ -361,11 +377,11 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // a6
     (todo, AddressingMode::Implied), // a7
     (todo, AddressingMode::Implied), // a8
-    (todo, AddressingMode::Implied), // a9
+    (lda, AddressingMode::Immediate), // a9
     (todo, AddressingMode::Implied), // aa
     (todo, AddressingMode::Implied), // ab
     (todo, AddressingMode::Implied), // ac
-    (todo, AddressingMode::Implied), // ad
+    (lda, AddressingMode::Absolute), // ad
     (todo, AddressingMode::Implied), // ae
     (todo, AddressingMode::Implied), // af
     (todo, AddressingMode::Implied), // b0
