@@ -90,6 +90,54 @@ fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn sta(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.write(cpu, sys, cpu.a) {
+        Some(TaggedByte::Data(Byte::Low(_))) if cpu.a8() => {
+            cpu.state = State::Fetch;
+        }
+        Some(TaggedByte::Data(Byte::High(_))) => {
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
+fn stx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.write(cpu, sys, cpu.x) {
+        Some(TaggedByte::Data(Byte::Low(_))) if cpu.m8() => {
+            cpu.state = State::Fetch;
+        }
+        Some(TaggedByte::Data(Byte::High(_))) => {
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
+fn sty(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.write(cpu, sys, cpu.y) {
+        Some(TaggedByte::Data(Byte::Low(_))) if cpu.m8() => {
+            cpu.state = State::Fetch;
+        }
+        Some(TaggedByte::Data(Byte::High(_))) => {
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
+fn stz(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.write(cpu, sys, 0) {
+        Some(TaggedByte::Data(Byte::Low(_))) if cpu.a8() => {
+            cpu.state = State::Fetch;
+        }
+        Some(TaggedByte::Data(Byte::High(_))) => {
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 #[inline]
 fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     match cpu.tcu {
@@ -308,7 +356,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 61
     (todo, AddressingMode::Implied), // 62
     (todo, AddressingMode::Implied), // 63
-    (todo, AddressingMode::Implied), // 64
+    (stz, AddressingMode::Direct), // 64
     (todo, AddressingMode::Implied), // 65
     (todo, AddressingMode::Implied), // 66
     (todo, AddressingMode::Implied), // 67
@@ -340,18 +388,18 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 81
     (todo, AddressingMode::Implied), // 82
     (todo, AddressingMode::Implied), // 83
-    (todo, AddressingMode::Implied), // 84
-    (todo, AddressingMode::Implied), // 85
-    (todo, AddressingMode::Implied), // 86
+    (sty, AddressingMode::Direct), // 84
+    (sta, AddressingMode::Direct), // 85
+    (stx, AddressingMode::Direct), // 86
     (todo, AddressingMode::Implied), // 87
     (todo, AddressingMode::Implied), // 88
     (todo, AddressingMode::Implied), // 89
     (todo, AddressingMode::Implied), // 8a
     (todo, AddressingMode::Implied), // 8b
-    (todo, AddressingMode::Implied), // 8c
-    (todo, AddressingMode::Implied), // 8d
-    (todo, AddressingMode::Implied), // 8e
-    (todo, AddressingMode::Implied), // 8f
+    (sty, AddressingMode::Absolute), // 8c
+    (sta, AddressingMode::Absolute), // 8d
+    (stx, AddressingMode::Absolute), // 8e
+    (sta, AddressingMode::AbsoluteLong), // 8f
     (todo, AddressingMode::Implied), // 90
     (todo, AddressingMode::Implied), // 91
     (todo, AddressingMode::Implied), // 92
@@ -364,7 +412,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 99
     (todo, AddressingMode::Implied), // 9a
     (todo, AddressingMode::Implied), // 9b
-    (todo, AddressingMode::Implied), // 9c
+    (stz, AddressingMode::Absolute), // 9c
     (todo, AddressingMode::Implied), // 9d
     (todo, AddressingMode::Implied), // 9e
     (todo, AddressingMode::Implied), // 9f
