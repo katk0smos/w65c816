@@ -14,7 +14,7 @@ fn io(cpu: &mut CPU, sys: &mut dyn System) {
 
 #[inline(always)]
 fn implied(cpu: &mut CPU, sys: &mut dyn System) {
-    AddressingMode::Implied.read(cpu, sys);
+    io(cpu, sys);
 
     if cpu.tcu == 1 {
         cpu.state = State::Fetch;
@@ -31,6 +31,18 @@ fn stp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     if cpu.tcu == 2 {
         if !cpu.aborted {
             cpu.stp = true;
+        }
+
+        cpu.state = State::Fetch;
+    }
+}
+
+fn wai(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    io(cpu, sys);
+
+    if cpu.tcu == 2 {
+        if !cpu.aborted {
+            cpu.wai = true;
         }
 
         cpu.state = State::Fetch;
@@ -385,165 +397,53 @@ fn rti(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
-fn tax(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.m8() {
-                let data = ByteRef::Low(&mut cpu.a).get();
-                ByteRef::Low(&mut cpu.x).set(data);
-            } else {
-                cpu.x = cpu.a;
+macro_rules! transfer {
+    ($name:ident, $cpu:ident, $cond8:expr, $r0:expr, $r1:expr) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            implied($cpu, sys);
+            if $cpu.tcu == 2 {
+                if !$cpu.aborted {
+                    if $cond8 {
+                        let data = ByteRef::Low(&mut $r0).get();
+                        ByteRef::Low(&mut $r1).set(data);
+                    } else {
+                        $r1 = $r0;
+                    }
+                }
+
+                $cpu.state = State::Fetch;
             }
         }
-        cpu.state = State::Fetch;
     }
 }
 
-fn tay(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.m8() {
-                let data = ByteRef::Low(&mut cpu.a).get();
-                ByteRef::Low(&mut cpu.y).set(data);
-            } else {
-                cpu.y = cpu.a;
+transfer!(tax, cpu, cpu.m8(), cpu.a, cpu.x);
+transfer!(tay, cpu, cpu.m8(), cpu.a, cpu.y);
+transfer!(tsx, cpu, cpu.flags.emulation, cpu.s, cpu.x);
+transfer!(txa, cpu, cpu.a8(), cpu.x, cpu.a);
+transfer!(txs, cpu, cpu.flags.emulation, cpu.x, cpu.s);
+transfer!(txy, cpu, cpu.flags.emulation, cpu.x, cpu.y);
+transfer!(tya, cpu, cpu.a8(), cpu.y, cpu.a);
+transfer!(tyx, cpu, cpu.flags.emulation, cpu.y, cpu.x);
+
+macro_rules! transfer16 {
+    ($name:ident, $cpu:ident, $r0:expr, $r1:expr) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            implied($cpu, sys);
+            if $cpu.tcu == 2 {
+                if !$cpu.aborted {
+                    $r1 = $r0;
+                }
             }
+            $cpu.state = State::Fetch;
         }
-        cpu.state = State::Fetch;
     }
 }
 
-fn tcd(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.d = cpu.a;
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tcs(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.s = cpu.a;
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tdc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.a = cpu.d;
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tsc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.a = cpu.s;
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tsx(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.flags.emulation {
-                let byte = ByteRef::Low(&mut cpu.s).get();
-                ByteRef::Low(&mut cpu.x).set(byte);
-            } else {
-                cpu.x = cpu.s;
-            }
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn txa(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.a8() {
-                let byte = ByteRef::Low(&mut cpu.x).get();
-                ByteRef::Low(&mut cpu.a).set(byte);
-            } else {
-                cpu.a = cpu.x;
-            }
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn txs(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.flags.emulation {
-                let byte = ByteRef::Low(&mut cpu.x).get();
-                ByteRef::Low(&mut cpu.s).set(byte);
-            } else {
-                cpu.s = cpu.x;
-            }
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn txy(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.flags.emulation {
-                let byte = ByteRef::Low(&mut cpu.x).get();
-                ByteRef::Low(&mut cpu.y).set(byte);
-            } else {
-                cpu.y = cpu.x;
-           }
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tya(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.a8() {
-                let byte = ByteRef::Low(&mut cpu.y).get();
-                ByteRef::Low(&mut cpu.a).set(byte);
-            } else {
-                cpu.a = cpu.y;
-            }
-        }
-        cpu.state = State::Fetch;
-    }
-}
-
-fn tyx(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            if cpu.flags.emulation {
-                let byte = ByteRef::Low(&mut cpu.y).get();
-                ByteRef::Low(&mut cpu.x).set(byte);
-            } else {
-                cpu.x = cpu.y;
-            }
-        }
-        cpu.state = State::Fetch;
-    }
-}
+transfer16!(tcd, cpu, cpu.a, cpu.d);
+transfer16!(tcs, cpu, cpu.a, cpu.s);
+transfer16!(tdc, cpu, cpu.d, cpu.a);
+transfer16!(tsc, cpu, cpu.s, cpu.a);
 
 fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
@@ -816,7 +716,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // c8
     (todo, AddressingMode::Implied), // c9
     (todo, AddressingMode::Implied), // ca
-    (todo, AddressingMode::Implied), // cb
+    (wai, AddressingMode::Implied), // cb
     (todo, AddressingMode::Implied), // cc
     (todo, AddressingMode::Implied), // cd
     (todo, AddressingMode::Implied), // ce

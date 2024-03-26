@@ -344,12 +344,14 @@ impl AddressingMode {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
+                    ByteRef::Low(&mut cpu.temp_addr).set(value);
                     Some(TaggedByte::Address(Byte::Low(value)))
                 }
                 (_, 2) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
+                    ByteRef::High(&mut cpu.temp_addr).set(value);
                     Some(TaggedByte::Address(Byte::High(value)))
                 }
                 (_, 3) => {
@@ -375,6 +377,7 @@ impl AddressingMode {
                     let offset = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
 
+                    ByteRef::Low(&mut cpu.temp_addr).set(offset);
                     Some(TaggedByte::Address(Byte::Low(offset)))
                 }
                 (_, 2, false) if cpu.d != 0 => {
@@ -406,6 +409,7 @@ impl AddressingMode {
                     let offset = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
                     
+                    ByteRef::Low(&mut cpu.temp_addr).set(offset);
                     Some(TaggedByte::Address(Byte::Low(offset)))
                 }
                 2 => {
@@ -463,12 +467,14 @@ impl AddressingMode {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
+                    ByteRef::Low(&mut cpu.temp_addr).set(value);
                     Some(TaggedByte::Address(Byte::Low(value)))
                 }
                 (_, 2) => {
                     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
                     let value = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
+                    ByteRef::High(&mut cpu.temp_addr).set(value);
                     Some(TaggedByte::Address(Byte::High(value)))
                 }
                 (_, 3) => {
@@ -495,6 +501,7 @@ impl AddressingMode {
                     let offset = system.read(effective, AddressType::Program, &cpu.signals);
                     cpu.pc = cpu.pc.wrapping_add(1);
 
+                    ByteRef::Low(&mut cpu.temp_addr).set(offset);
                     Some(TaggedByte::Address(Byte::Low(offset)))
                 }
                 (_, 2, false) => {
@@ -858,6 +865,12 @@ impl CPU {
     #[inline(always)]
     pub fn flags(&self) -> &Flags {
         &self.flags
+    }
+
+    /// Processor stopped status
+    #[inline(always)]
+    pub fn stopped(&self) -> bool {
+        self.stp
     }
 
     /// Returns the width of the accumulator, either 8 or 16
