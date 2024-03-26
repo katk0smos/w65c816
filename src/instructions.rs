@@ -492,6 +492,28 @@ fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn ora(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            let a = ByteRef::Low(&mut cpu.a).get() | l;
+            ByteRef::Low(&mut cpu.a).set(a);
+            cpu.flags.zero = a == 0;
+            if cpu.a8() {
+                cpu.flags.negative = a >> 7 != 0;
+                cpu.state = State::Fetch;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            let a = ByteRef::High(&mut cpu.a).get() | h;
+            ByteRef::High(&mut cpu.a).set(a);
+            cpu.flags.zero = cpu.flags.zero && a == 0;
+            cpu.flags.negative = a >> 7 != 0;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 fn eor(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
@@ -615,37 +637,37 @@ fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                      // machine as State::Brk)
-    (todo, AddressingMode::Implied), // 01
+    (ora, AddressingMode::DirectIndirectX), // 01
     (todo, AddressingMode::Implied), // 02
-    (todo, AddressingMode::Implied), // 03
+    (ora, AddressingMode::StackRel), // 03
     (todo, AddressingMode::Implied), // 04
-    (todo, AddressingMode::Implied), // 05
+    (ora, AddressingMode::Direct), // 05
     (asl, AddressingMode::Direct), // 06
-    (todo, AddressingMode::Implied), // 07
+    (ora, AddressingMode::DirectIndirectLong), // 07
     (php, AddressingMode::Implied), // 08
-    (todo, AddressingMode::Implied), // 09
+    (ora, AddressingMode::Immediate), // 09
     (asl, AddressingMode::Accumulator), // 0a
     (phd, AddressingMode::Implied), // 0b
     (todo, AddressingMode::Implied), // 0c
-    (todo, AddressingMode::Implied), // 0d
+    (ora, AddressingMode::Absolute), // 0d
     (asl, AddressingMode::Absolute), // 0e
-    (todo, AddressingMode::Implied), // 0f
+    (ora, AddressingMode::AbsoluteLong), // 0f
     (bpl, AddressingMode::Immediate), // 10
-    (todo, AddressingMode::Implied), // 11
-    (todo, AddressingMode::Implied), // 12
-    (todo, AddressingMode::Implied), // 13
+    (ora, AddressingMode::DirectIndirectIndexedY), // 11
+    (ora, AddressingMode::DirectIndirect), // 12
+    (ora, AddressingMode::StackRelIndirectIndexedY), // 13
     (todo, AddressingMode::Implied), // 14
-    (todo, AddressingMode::Implied), // 15
+    (ora, AddressingMode::DirectIndexedX), // 15
     (asl, AddressingMode::DirectIndexedX), // 16
-    (todo, AddressingMode::Implied), // 17
+    (ora, AddressingMode::DirectIndirectLongIndexedY), // 17
     (clc, AddressingMode::Implied), // 18
-    (todo, AddressingMode::Implied), // 19
+    (ora, AddressingMode::AbsoluteIndexedY), // 19
     (todo, AddressingMode::Implied), // 1a
     (tcs, AddressingMode::Implied), // 1b
     (todo, AddressingMode::Implied), // 1c
-    (todo, AddressingMode::Implied), // 1d
+    (ora, AddressingMode::AbsoluteIndexedX), // 1d
     (asl, AddressingMode::AbsoluteIndexedX), // 1e
-    (todo, AddressingMode::Implied), // 1f
+    (ora, AddressingMode::AbsoluteLongIndexedX), // 1f
     (jsr, AddressingMode::Absolute), // 20
     (and, AddressingMode::DirectIndirectX), // 21
     (jsr_al, AddressingMode::AbsoluteLong), // 22
