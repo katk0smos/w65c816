@@ -568,6 +568,28 @@ push!(php, cpu, cpu.flags.as_byte() as u16, false);
 push!(phx, cpu, cpu.x, cpu.m16());
 push!(phy, cpu, cpu.y, cpu.m16());
 
+fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let b16 = cpu.a16();
+    let res = am.rwb(cpu, sys, |cpu, mut v, b16| if b16 {
+        cpu.flags.carry = v >> 15 != 0;
+        v <<= 1;
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = v >> 15 != 0;
+        v
+    } else {
+        let mut v = v as u8;
+        cpu.flags.carry = v >> 7 != 0;
+        v <<= 1;
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = v >> 7 != 0;
+        v as u16
+    }, b16);
+
+    if let Some(TaggedByte::Data(Byte::Low(_))) = res {
+        cpu.state = State::Fetch;
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                      // machine as State::Brk)
@@ -576,15 +598,15 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 03
     (todo, AddressingMode::Implied), // 04
     (todo, AddressingMode::Implied), // 05
-    (todo, AddressingMode::Implied), // 06
+    (asl, AddressingMode::Direct), // 06
     (todo, AddressingMode::Implied), // 07
     (php, AddressingMode::Implied), // 08
     (todo, AddressingMode::Implied), // 09
-    (todo, AddressingMode::Implied), // 0a
+    (asl, AddressingMode::Accumulator), // 0a
     (phd, AddressingMode::Implied), // 0b
     (todo, AddressingMode::Implied), // 0c
     (todo, AddressingMode::Implied), // 0d
-    (todo, AddressingMode::Implied), // 0e
+    (asl, AddressingMode::Absolute), // 0e
     (todo, AddressingMode::Implied), // 0f
     (bpl, AddressingMode::Immediate), // 10
     (todo, AddressingMode::Implied), // 11
@@ -592,7 +614,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 13
     (todo, AddressingMode::Implied), // 14
     (todo, AddressingMode::Implied), // 15
-    (todo, AddressingMode::Implied), // 16
+    (asl, AddressingMode::DirectIndexedX), // 16
     (todo, AddressingMode::Implied), // 17
     (clc, AddressingMode::Implied), // 18
     (todo, AddressingMode::Implied), // 19
@@ -600,7 +622,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (tcs, AddressingMode::Implied), // 1b
     (todo, AddressingMode::Implied), // 1c
     (todo, AddressingMode::Implied), // 1d
-    (todo, AddressingMode::Implied), // 1e
+    (asl, AddressingMode::AbsoluteIndexedX), // 1e
     (todo, AddressingMode::Implied), // 1f
     (jsr, AddressingMode::Absolute), // 20
     (and, AddressingMode::DirectIndirectX), // 21

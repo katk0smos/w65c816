@@ -560,7 +560,76 @@ impl AddressingMode {
                 _ => None,
             },
             AddressingMode::Implied | AddressingMode::Immediate => None,
-            _ => todo!(),
+            am => todo!("write {am:?}"),
+        }
+    }
+
+    pub fn rwb<F: Fn(&mut CPU, u16, bool) -> u16>(self, cpu: &mut CPU, sys: &mut dyn System, f: F, b16: bool) -> Option<TaggedByte> {
+        match (self, cpu.tcu, b16) {
+            (AddressingMode::Accumulator, 1, _) => {
+                let a = f(cpu, cpu.a, cpu.a16());
+                if !cpu.aborted {
+                    cpu.a = a;
+                }
+                None
+            }
+            (AddressingMode::Accumulator, _, _) => None,
+            (AddressingMode::Absolute, 1, _) => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let value = sys.read(effective, AddressType::Program, &cpu.signals);
+                cpu.pc = cpu.pc.wrapping_add(1);
+                ByteRef::Low(&mut cpu.temp_addr).set(value);
+                Some(TaggedByte::Address(Byte::Low(value)))
+            }
+            (AddressingMode::Absolute, 2, _) => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let value = sys.read(effective, AddressType::Program, &cpu.signals);
+                cpu.pc = cpu.pc.wrapping_add(1);
+                ByteRef::High(&mut cpu.temp_addr).set(value);
+                Some(TaggedByte::Address(Byte::High(value)))
+            }
+            (AddressingMode::Absolute, 3, _) => {
+                cpu.signals.mlb = false;
+                let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr as u32);
+                let value = sys.read(effective, AddressType::Data, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_data).set(value);
+                None
+            }
+            (AddressingMode::Absolute, 4, true) => {
+                let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(1) as u32);
+                let value = sys.read(effective, AddressType::Data, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_data).set(value);
+                None
+            }
+            (AddressingMode::Absolute, 5, true) | (AddressingMode::Absolute, 4, false) => {
+                let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(1) as u32);
+                if cpu.flags.emulation {
+                    let data = ByteRef::High(&mut cpu.temp_data).get();
+                    sys.write(effective, data, AddressType::Invalid, &cpu.signals);
+                } else {
+                    let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+                }
+
+                let data = f(cpu, cpu.temp_data, b16);
+                if !cpu.aborted {
+                    cpu.temp_data = data;
+                }
+
+                None
+            }
+            (AddressingMode::Absolute, 6, true) => {
+                let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(1) as u32);
+                let data = ByteRef::High(&mut cpu.temp_data).get();
+                sys.write(effective, data, AddressType::Data, &cpu.signals);
+                Some(TaggedByte::Data(Byte::High(data)))
+            }
+            (AddressingMode::Absolute, 7, true) | (AddressingMode::Absolute, 6, false) => {
+                let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr as u32);
+                let data = ByteRef::Low(&mut cpu.temp_data).get();
+                sys.write(effective, data, AddressType::Data, &cpu.signals);
+                Some(TaggedByte::Data(Byte::Low(data)))
+            }
+            _ => None,
         }
     }
 }
@@ -705,7 +774,6 @@ impl CPU {
         self.signals.rdy = rdy;
 
         fn implied(cpu: &mut CPU, system: &mut dyn System) {
-            cpu.signals.mlb = false;
             let _ = AddressingMode::Implied.read(cpu, system);
             cpu.state = State::Fetch;
         }
@@ -828,7 +896,7 @@ impl CPU {
                 }
             }
             State::Fetch => {
-                self.signals.mlb = false;
+                self.signals.mlb = true;
                 self.tcu = 0;
 
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
