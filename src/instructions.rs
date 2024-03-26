@@ -492,6 +492,28 @@ fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn eor(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            let a = ByteRef::Low(&mut cpu.a).get() ^ l;
+            ByteRef::Low(&mut cpu.a).set(a);
+            cpu.flags.zero = a == 0;
+            if cpu.a8() {
+                cpu.flags.negative = a >> 7 != 0;
+                cpu.state = State::Fetch;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            let a = ByteRef::High(&mut cpu.a).get() ^ h;
+            ByteRef::High(&mut cpu.a).set(a);
+            cpu.flags.zero = cpu.flags.zero && a == 0;
+            cpu.flags.negative = a >> 7 != 0;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 macro_rules! branch {
     ($name:ident, $cpu:ident, $expr:expr) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
@@ -657,37 +679,37 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 3e
     (and, AddressingMode::AbsoluteLongIndexedX), // 3f
     (rti, AddressingMode::Implied), // 40
-    (todo, AddressingMode::Implied), // 41
+    (eor, AddressingMode::DirectIndirectX), // 41
     (todo, AddressingMode::Implied), // 42
-    (todo, AddressingMode::Implied), // 43
+    (eor, AddressingMode::StackRel), // 43
     (todo, AddressingMode::Implied), // 44
-    (todo, AddressingMode::Implied), // 45
+    (eor, AddressingMode::Direct), // 45
     (todo, AddressingMode::Implied), // 46
-    (todo, AddressingMode::Implied), // 47
+    (eor, AddressingMode::DirectIndirectLong), // 47
     (pha, AddressingMode::Implied), // 48
-    (todo, AddressingMode::Implied), // 49
+    (eor, AddressingMode::Immediate), // 49
     (todo, AddressingMode::Implied), // 4a
     (phk, AddressingMode::Implied), // 4b
     (todo, AddressingMode::Implied), // 4c
-    (todo, AddressingMode::Implied), // 4d
+    (eor, AddressingMode::Absolute), // 4d
     (todo, AddressingMode::Implied), // 4e
-    (todo, AddressingMode::Implied), // 4f
+    (eor, AddressingMode::AbsoluteLong), // 4f
     (bvc, AddressingMode::Immediate), // 50
-    (todo, AddressingMode::Implied), // 51
-    (todo, AddressingMode::Implied), // 52
-    (todo, AddressingMode::Implied), // 53
+    (eor, AddressingMode::DirectIndirectIndexedY), // 51
+    (eor, AddressingMode::DirectIndirect), // 52
+    (eor, AddressingMode::StackRelIndirectIndexedY), // 53
     (todo, AddressingMode::Implied), // 54
-    (todo, AddressingMode::Implied), // 55
+    (eor, AddressingMode::DirectIndexedX), // 55
     (todo, AddressingMode::Implied), // 56
-    (todo, AddressingMode::Implied), // 57
+    (eor, AddressingMode::DirectIndirectLongIndexedY), // 57
     (cli, AddressingMode::Implied), // 58
-    (todo, AddressingMode::Implied), // 59
+    (eor, AddressingMode::AbsoluteIndexedY), // 59
     (phy, AddressingMode::Implied), // 5a
     (tcd, AddressingMode::Implied), // 5b
     (todo, AddressingMode::Implied), // 5c
-    (todo, AddressingMode::Implied), // 5d
+    (eor, AddressingMode::AbsoluteIndexedX), // 5d
     (todo, AddressingMode::Implied), // 5e
-    (todo, AddressingMode::Implied), // 5f
+    (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
     (rts, AddressingMode::Absolute), // 60
     (todo, AddressingMode::Implied), // 61
     (todo, AddressingMode::Implied), // 62

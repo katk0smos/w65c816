@@ -571,7 +571,7 @@ impl AddressingMode {
                 if !cpu.aborted {
                     cpu.a = a;
                 }
-                None
+                Some(TaggedByte::Data(Byte::Low(a as u8)))
             }
             (AddressingMode::Accumulator, _, _) => None,
             (AddressingMode::Absolute, 1, _) => {
