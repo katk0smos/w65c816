@@ -25,6 +25,18 @@ fn implied(cpu: &mut CPU, sys: &mut dyn System) {
 // so this is never actually called
 fn brk(_cpu: &mut CPU, _sys: &mut dyn System, _am: AddressingMode) {}
 
+fn stp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    io(cpu, sys);
+
+    if cpu.tcu == 2 {
+        if !cpu.aborted {
+            cpu.stp = true;
+        }
+
+        cpu.state = State::Fetch;
+    }
+}
+
 fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
 }
@@ -536,20 +548,19 @@ fn tyx(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            let a = ByteRef::Low(&mut cpu.a).get();
-            ByteRef::Low(&mut cpu.a).set(a & l);
+            let a = ByteRef::Low(&mut cpu.a).get() & l;
+            ByteRef::Low(&mut cpu.a).set(a);
+            cpu.flags.zero = a == 0;
             if cpu.a8() {
-                let a = ByteRef::Low(&mut cpu.a).get();
-                cpu.flags.zero = a == 0;
                 cpu.flags.negative = a >> 7 != 0;
                 cpu.state = State::Fetch;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
-            let a = ByteRef::High(&mut cpu.a).get();
-            ByteRef::High(&mut cpu.a).set(a & h);
-            cpu.flags.zero = cpu.a == 0;
-            cpu.flags.negative = cpu.a >> 15 != 0;
+            let a = ByteRef::High(&mut cpu.a).get() & h;
+            ByteRef::High(&mut cpu.a).set(a);
+            cpu.flags.zero = cpu.flags.zero && a == 0;
+            cpu.flags.negative = a >> 7 != 0;
             cpu.state = State::Fetch;
         }
         _ => (),
@@ -821,7 +832,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (cld, AddressingMode::Implied), // d8
     (todo, AddressingMode::Implied), // d9
     (todo, AddressingMode::Implied), // da
-    (todo, AddressingMode::Implied), // db
+    (stp, AddressingMode::Implied), // db
     (todo, AddressingMode::Implied), // dc
     (todo, AddressingMode::Implied), // dd
     (todo, AddressingMode::Implied), // de
