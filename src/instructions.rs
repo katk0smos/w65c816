@@ -339,6 +339,31 @@ fn sep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn rep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+    let data = match cpu.tcu {
+        1 => {
+            cpu.pc = cpu.pc.wrapping_add(1);
+            sys.read(effective, AddressType::Program, &cpu.signals)
+        }
+        2 => sys.read(effective, AddressType::Invalid, &cpu.signals),
+        _ => unreachable!(),
+    };
+
+    if cpu.tcu == 2 {
+        if !cpu.aborted {
+            cpu.flags.set_mask(data, false);
+            cpu.signals.m = cpu.flags.mem_sel;
+            cpu.signals.x = cpu.flags.index_sel;
+            if cpu.flags.index_sel {
+                ByteRef::High(&mut cpu.x).set(0);
+                ByteRef::High(&mut cpu.y).set(0);
+            }
+        }
+        cpu.state = State::Fetch;
+    }
+}
+
 fn rts(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     const RTS: AddressingMode = AddressingMode::Absolute;
     const RTL: AddressingMode = AddressingMode::AbsoluteLong;
@@ -739,7 +764,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (lda, AddressingMode::AbsoluteLongIndexedX), // bf
     (todo, AddressingMode::Implied), // c0
     (todo, AddressingMode::Implied), // c1
-    (todo, AddressingMode::Implied), // c2
+    (rep, AddressingMode::Immediate), // c2
     (todo, AddressingMode::Implied), // c3
     (todo, AddressingMode::Implied), // c4
     (todo, AddressingMode::Implied), // c5
