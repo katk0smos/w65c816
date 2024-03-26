@@ -511,6 +511,38 @@ branch!(bvc, cpu, !cpu.flags.overflow);
 branch!(bvs, cpu, cpu.flags.overflow);
 branch!(bra, cpu, true);
 
+macro_rules! push {
+    ($name:ident, $cpu:ident, $r:expr, $b16:expr) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            let mut r: u16 = $r;
+            match $cpu.tcu {
+                1 => {
+                    let b = ByteRef::Low(&mut r).get();
+                    $cpu.stack_push(sys, b, false);
+
+                    if !($b16) {
+                        $cpu.state = State::Fetch;
+                    }
+                }
+                2 => {
+                    let b = ByteRef::High(&mut r).get();
+                    $cpu.stack_push(sys, b, false);
+                    $cpu.state = State::Fetch;
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+push!(pha, cpu, cpu.a, cpu.a16());
+push!(phb, cpu, cpu.dbr as u16, false);
+push!(phd, cpu, cpu.d, true);
+push!(phk, cpu, cpu.pbr as u16, false);
+push!(php, cpu, cpu.flags.as_byte() as u16, false);
+push!(phx, cpu, cpu.x, cpu.m16());
+push!(phy, cpu, cpu.y, cpu.m16());
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                      // machine as State::Brk)
@@ -521,10 +553,10 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 05
     (todo, AddressingMode::Implied), // 06
     (todo, AddressingMode::Implied), // 07
-    (todo, AddressingMode::Implied), // 08
+    (php, AddressingMode::Implied), // 08
     (todo, AddressingMode::Implied), // 09
     (todo, AddressingMode::Implied), // 0a
-    (todo, AddressingMode::Implied), // 0b
+    (phd, AddressingMode::Implied), // 0b
     (todo, AddressingMode::Implied), // 0c
     (todo, AddressingMode::Implied), // 0d
     (todo, AddressingMode::Implied), // 0e
@@ -585,10 +617,10 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 45
     (todo, AddressingMode::Implied), // 46
     (todo, AddressingMode::Implied), // 47
-    (todo, AddressingMode::Implied), // 48
+    (pha, AddressingMode::Implied), // 48
     (todo, AddressingMode::Implied), // 49
     (todo, AddressingMode::Implied), // 4a
-    (todo, AddressingMode::Implied), // 4b
+    (phk, AddressingMode::Implied), // 4b
     (todo, AddressingMode::Implied), // 4c
     (todo, AddressingMode::Implied), // 4d
     (todo, AddressingMode::Implied), // 4e
@@ -603,7 +635,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 57
     (cli, AddressingMode::Implied), // 58
     (todo, AddressingMode::Implied), // 59
-    (todo, AddressingMode::Implied), // 5a
+    (phy, AddressingMode::Implied), // 5a
     (tcd, AddressingMode::Implied), // 5b
     (todo, AddressingMode::Implied), // 5c
     (todo, AddressingMode::Implied), // 5d
@@ -652,7 +684,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 88
     (todo, AddressingMode::Implied), // 89
     (txa, AddressingMode::Implied), // 8a
-    (todo, AddressingMode::Implied), // 8b
+    (phb, AddressingMode::Implied), // 8b
     (sty, AddressingMode::Absolute), // 8c
     (sta, AddressingMode::Absolute), // 8d
     (stx, AddressingMode::Absolute), // 8e
@@ -731,7 +763,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // d7
     (cld, AddressingMode::Implied), // d8
     (todo, AddressingMode::Implied), // d9
-    (todo, AddressingMode::Implied), // da
+    (phx, AddressingMode::Implied), // da
     (stp, AddressingMode::Implied), // db
     (todo, AddressingMode::Implied), // dc
     (todo, AddressingMode::Implied), // dd
