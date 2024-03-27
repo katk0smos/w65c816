@@ -311,6 +311,8 @@ pub(crate) enum AddressingMode {
     AbsoluteLong,
     AbsoluteLongIndexedX,
     IndexedIndirectX,
+    Indirect,
+    IndirectLong,
 }
 
 impl AddressingMode {

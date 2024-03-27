@@ -314,6 +314,22 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    if matches!(am, AddressingMode::AbsoluteLong | AddressingMode::IndirectLong) {
+        todo!("{am:?}");
+    }
+
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => cpu.temp_data = l as u16,
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            ByteRef::High(&mut cpu.temp_data).set(h);
+            cpu.pc = cpu.temp_data;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 fn sep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
     let data = match cpu.tcu {
@@ -751,7 +767,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::Immediate), // 49
     (todo, AddressingMode::Implied), // 4a
     (phk, AddressingMode::Implied), // 4b
-    (todo, AddressingMode::Implied), // 4c
+    (jmp, AddressingMode::Immediate), // 4c
     (eor, AddressingMode::Absolute), // 4d
     (todo, AddressingMode::Implied), // 4e
     (eor, AddressingMode::AbsoluteLong), // 4f
@@ -767,7 +783,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::AbsoluteIndexedY), // 59
     (phy, AddressingMode::Implied), // 5a
     (tcd, AddressingMode::Implied), // 5b
-    (todo, AddressingMode::Implied), // 5c
+    (jmp, AddressingMode::AbsoluteLong), // 5c
     (eor, AddressingMode::AbsoluteIndexedX), // 5d
     (todo, AddressingMode::Implied), // 5e
     (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
@@ -783,7 +799,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 69
     (todo, AddressingMode::Implied), // 6a
     (rts, AddressingMode::AbsoluteLong), // 6b
-    (todo, AddressingMode::Implied), // 6c
+    (jmp, AddressingMode::Indirect), // 6c
     (todo, AddressingMode::Implied), // 6d
     (todo, AddressingMode::Implied), // 6e
     (todo, AddressingMode::Implied), // 6f
@@ -799,7 +815,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 79
     (ply, AddressingMode::Implied), // 7a
     (tdc, AddressingMode::Implied), // 7b
-    (todo, AddressingMode::Implied), // 7c
+    (jmp, AddressingMode::IndexedIndirectX), // 7c
     (todo, AddressingMode::Implied), // 7d
     (todo, AddressingMode::Implied), // 7e
     (todo, AddressingMode::Implied), // 7f
@@ -895,7 +911,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // d9
     (phx, AddressingMode::Implied), // da
     (stp, AddressingMode::Implied), // db
-    (todo, AddressingMode::Implied), // dc
+    (jmp, AddressingMode::IndirectLong), // dc
     (todo, AddressingMode::Implied), // dd
     (todo, AddressingMode::Implied), // de
     (todo, AddressingMode::Implied), // df
