@@ -659,6 +659,7 @@ pub(crate) enum State {
     Reset,
     Abort,
     Brk,
+    Cop,
     // Instructions
     Instruction(instructions::InstructionFn, AddressingMode),
 }
@@ -897,6 +898,28 @@ impl CPU {
                     _ => interrupt(self, system, vector, true, true),
                 }
             }
+            State::Cop => {
+                let vector = if self.flags.emulation { 0xfff4 } else { 0xffe4 };
+
+                match (self.tcu, self.flags.emulation) {
+                    (1, _) => {
+                        let effective = ((self.pbr as u32) << 16) | self.pc as u32;
+                        system.read(effective, AddressType::Program, &self.signals);
+                        self.pc = self.pc.wrapping_add(1);
+                    }
+                    (5, true) | (6, false) => {
+                        self.flags.decimal = false;
+                        self.flags.interrupt_disable = true;
+                        interrupt(self, system, vector, true, true);
+                    }
+                    (7, false) => {
+                        let dbr = self.dbr;
+                        interrupt(self, system, vector, true, true);
+                        self.dbr = dbr;
+                    }
+                    _ => interrupt(self, system, vector, true, true),
+                }
+            }
             State::Fetch => {
                 self.signals.mlb = true;
                 self.tcu = 0;
@@ -935,7 +958,8 @@ impl CPU {
                 self.pc = self.pc.wrapping_add(1);
 
                 self.state = match self.ir {
-                    0 => State::Brk,
+                    0x00 => State::Brk,
+                    0x02 => State::Cop,
                     ir => {
                         let (f, am) = instructions::INSTRUCTIONS[ir as usize];
                         State::Instruction(f, am)

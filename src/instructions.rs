@@ -23,7 +23,7 @@ fn implied(cpu: &mut CPU, sys: &mut dyn System) {
 
 // doesn't need to be implemented, implemented as a state in the state machine
 // so this is never actually called
-fn brk(_cpu: &mut CPU, _sys: &mut dyn System, _am: AddressingMode) {}
+fn brk_cop(_cpu: &mut CPU, _sys: &mut dyn System, _am: AddressingMode) {}
 
 fn stp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     io(cpu, sys);
@@ -689,10 +689,10 @@ fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 }
 
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
-    (brk, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
-                                     // machine as State::Brk)
+    (brk_cop, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
+                                        // machine as State::Brk)
     (ora, AddressingMode::DirectIndirectX), // 01
-    (todo, AddressingMode::Implied), // 02
+    (brk_cop, AddressingMode::Implied), // 02 (same as brk, this is COP)
     (ora, AddressingMode::StackRel), // 03
     (todo, AddressingMode::Implied), // 04
     (ora, AddressingMode::Direct), // 05
