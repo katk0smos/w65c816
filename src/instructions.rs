@@ -485,6 +485,58 @@ transfer16!(tcs, cpu, cpu.a, cpu.s);
 transfer16!(tdc, cpu, cpu.d, cpu.a);
 transfer16!(tsc, cpu, cpu.s, cpu.a);
 
+fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            let l = l as u16;
+            let c = if cpu.flags.carry { 1 } else { 0 };
+            let a = ByteRef::Low(&mut cpu.a).get() as u16;
+            let mut r = a + l + c;
+            // handle decimal mode
+            if cpu.flags.decimal {
+                if (a ^ l ^ r) & 0x10 != 0 {
+                    r += 6;
+                }
+
+                if (r & 0xf0) > 0x90 {
+                    r += 0x60;
+                }
+            }
+            ByteRef::Low(&mut cpu.a).set(r as u8);
+            cpu.flags.carry = r > 0xff;
+            cpu.flags.zero = r == 0;
+            cpu.flags.negative = r & 0x80 != 0;
+            cpu.flags.overflow = (a ^ r) & (l ^ r) & 0x80 != 0;
+            if cpu.a8() {
+                cpu.state = State::Fetch;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            let h = h as u16;
+            let c = if cpu.flags.carry { 1 } else { 0 };
+            let a = ByteRef::High(&mut cpu.a).get() as u16;
+            let mut r = a + h + c;
+            // handle decimal mode
+            if cpu.flags.decimal {
+                if (a ^ h ^ r) & 0x10 != 0 {
+                    r += 6;
+                }
+
+                if (r & 0xf0) > 0x90 {
+                    r += 0x60;
+                }
+            }
+            ByteRef::High(&mut cpu.a).set(r as u8);
+            cpu.flags.carry = r > 0xff;
+            cpu.flags.zero = cpu.flags.zero && r == 0;
+            cpu.flags.negative = r & 0x80 != 0;
+            cpu.flags.overflow = (a ^ r) & (h ^ r) & 0x80 != 0;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
@@ -787,37 +839,37 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 5e
     (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
     (rts, AddressingMode::Absolute), // 60
-    (todo, AddressingMode::Implied), // 61
+    (adc, AddressingMode::DirectIndirectX), // 61
     (todo, AddressingMode::Implied), // 62
-    (todo, AddressingMode::Implied), // 63
+    (adc, AddressingMode::StackRel), // 63
     (stz, AddressingMode::Direct), // 64
-    (todo, AddressingMode::Implied), // 65
+    (adc, AddressingMode::Direct), // 65
     (todo, AddressingMode::Implied), // 66
-    (todo, AddressingMode::Implied), // 67
+    (adc, AddressingMode::DirectIndirectLong), // 67
     (pla, AddressingMode::Implied), // 68
-    (todo, AddressingMode::Implied), // 69
+    (adc, AddressingMode::Immediate), // 69
     (todo, AddressingMode::Implied), // 6a
     (rts, AddressingMode::AbsoluteLong), // 6b
     (jmp, AddressingMode::Indirect), // 6c
-    (todo, AddressingMode::Implied), // 6d
+    (adc, AddressingMode::Absolute), // 6d
     (todo, AddressingMode::Implied), // 6e
-    (todo, AddressingMode::Implied), // 6f
+    (adc, AddressingMode::AbsoluteLong), // 6f
     (bvs, AddressingMode::Immediate), // 70
-    (todo, AddressingMode::Implied), // 71
-    (todo, AddressingMode::Implied), // 72
-    (todo, AddressingMode::Implied), // 73
+    (adc, AddressingMode::DirectIndirectIndexedY), // 71
+    (adc, AddressingMode::DirectIndirect), // 72
+    (adc, AddressingMode::StackRelIndirectIndexedY), // 73
     (stz, AddressingMode::DirectIndexedX), // 74
-    (todo, AddressingMode::Implied), // 75
+    (adc, AddressingMode::DirectIndexedX), // 75
     (todo, AddressingMode::Implied), // 76
-    (todo, AddressingMode::Implied), // 77
+    (adc, AddressingMode::DirectIndirectLongIndexedY), // 77
     (sei, AddressingMode::Implied), // 78
-    (todo, AddressingMode::Implied), // 79
+    (adc, AddressingMode::AbsoluteIndexedY), // 79
     (ply, AddressingMode::Implied), // 7a
     (tdc, AddressingMode::Implied), // 7b
     (jmp, AddressingMode::IndexedIndirectX), // 7c
-    (todo, AddressingMode::Implied), // 7d
+    (adc, AddressingMode::AbsoluteIndexedX), // 7d
     (todo, AddressingMode::Implied), // 7e
-    (todo, AddressingMode::Implied), // 7f
+    (adc, AddressingMode::AbsoluteLongIndexedX), // 7f
     (bra, AddressingMode::Immediate), // 80
     (sta, AddressingMode::DirectIndirectX), // 81
     (todo, AddressingMode::Implied), // 82
