@@ -667,7 +667,7 @@ pub struct CPU {
     /// Instruction Register
     ir: u8,
     /// Timing Control Unit
-    tcu: usize,
+    tcu: u8,
     /// Accumulator
     a: u16,
     /// Data Bank Register
@@ -770,7 +770,7 @@ impl CPU {
             self.aborted = true;
         }
 
-        self.tcu += 1;
+        self.tcu = self.tcu.wrapping_add(1);
         self.signals.rdy = rdy;
 
         fn implied(cpu: &mut CPU, system: &mut dyn System) {
@@ -1147,6 +1147,18 @@ impl CPU {
     #[inline(always)]
     pub fn set_d(&mut self, d: u16) {
         self.d = d;
+    }
+
+    /// Returns the IR
+    #[inline(always)]
+    pub fn ir(&mut self) -> u8 {
+        self.ir
+    }
+
+    /// Returns the TCU
+    #[inline(always)]
+    pub fn tcu(&mut self) -> u8 {
+        self.tcu
     }
 
     /// Returns the processor status flags register (P)
