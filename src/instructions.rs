@@ -325,16 +325,17 @@ fn sep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         _ => unreachable!(),
     };
 
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.flags.set_mask(data, true);
-            cpu.signals.m = cpu.flags.mem_sel;
-            cpu.signals.x = cpu.flags.index_sel;
-            if cpu.flags.index_sel {
-                ByteRef::High(&mut cpu.x).set(0);
-                ByteRef::High(&mut cpu.y).set(0);
-            }
+    if cpu.tcu == 1 && !cpu.aborted {
+        cpu.flags.set_mask(data, true);
+        cpu.signals.m = cpu.flags.mem_sel;
+        cpu.signals.x = cpu.flags.index_sel;
+        if cpu.flags.index_sel {
+            ByteRef::High(&mut cpu.x).set(0);
+            ByteRef::High(&mut cpu.y).set(0);
         }
+    }
+
+    if cpu.tcu == 2 {
         cpu.state = State::Fetch;
     }
 }
@@ -350,16 +351,17 @@ fn rep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         _ => unreachable!(),
     };
 
-    if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.flags.set_mask(data, false);
-            cpu.signals.m = cpu.flags.mem_sel;
-            cpu.signals.x = cpu.flags.index_sel;
-            if cpu.flags.index_sel {
-                ByteRef::High(&mut cpu.x).set(0);
-                ByteRef::High(&mut cpu.y).set(0);
-            }
+    if cpu.tcu == 1 && !cpu.aborted {
+        cpu.flags.set_mask(data, false);
+        cpu.signals.m = cpu.flags.mem_sel;
+        cpu.signals.x = cpu.flags.index_sel;
+        if cpu.flags.index_sel {
+            ByteRef::High(&mut cpu.x).set(0);
+            ByteRef::High(&mut cpu.y).set(0);
         }
+    }
+
+    if cpu.tcu == 2 {
         cpu.state = State::Fetch;
     }
 }
