@@ -379,7 +379,7 @@ fn rts(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             ByteRef::High(&mut cpu.pc).set(data);
         }
         (RTS, 5) => {
-            let mut s = cpu.s.wrapping_add(1);
+            let mut s = cpu.s;
             if cpu.flags.emulation {
                 ByteRef::High(&mut s).set(0x01);
             }
@@ -455,10 +455,8 @@ macro_rules! transfer16 {
     ($name:ident, $cpu:ident, $r0:expr, $r1:expr) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             implied($cpu, sys);
-            if $cpu.tcu == 2 {
-                if !$cpu.aborted {
-                    $r1 = $r0;
-                }
+            if !$cpu.aborted {
+                $r1 = $r0;
             }
             $cpu.state = State::Fetch;
         }
@@ -585,17 +583,50 @@ macro_rules! push {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             let mut r: u16 = $r;
             match $cpu.tcu {
-                1 => {
+                1 if $b16 => {
+                    let b = ByteRef::High(&mut r).get();
+                    $cpu.stack_push(sys, b, false);
+                }
+                1 | 2 => {
                     let b = ByteRef::Low(&mut r).get();
                     $cpu.stack_push(sys, b, false);
+                    $cpu.state = State::Fetch;
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
 
+macro_rules! pull8 {
+    ($name:ident, $cpu:ident, $v:ident, $set:stmt) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            match $cpu.tcu {
+                1 => {
+                    let $v = $cpu.stack_pop(sys);
+                    $set;
+                    $cpu.state = State::Fetch;
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+macro_rules! pull16 {
+    ($name:ident, $cpu:ident, $r:expr, $b16:expr) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            match $cpu.tcu {
+                1 => {
+                    let b = $cpu.stack_pop(sys);
+                    ByteRef::Low(&mut $r).set(b);
                     if !($b16) {
                         $cpu.state = State::Fetch;
                     }
                 }
                 2 => {
-                    let b = ByteRef::High(&mut r).get();
-                    $cpu.stack_push(sys, b, false);
+                    let b = $cpu.stack_pop(sys);
+                    ByteRef::High(&mut $r).set(b);
                     $cpu.state = State::Fetch;
                 }
                 _ => unreachable!(),
@@ -611,6 +642,12 @@ push!(phk, cpu, cpu.pbr as u16, false);
 push!(php, cpu, cpu.flags.as_byte() as u16, false);
 push!(phx, cpu, cpu.x, cpu.m16());
 push!(phy, cpu, cpu.y, cpu.m16());
+pull16!(pla, cpu, cpu.a, cpu.a16());
+pull8!(plb, cpu, b, cpu.dbr = b);
+pull16!(pld, cpu, cpu.d, true);
+pull8!(plp, cpu, p, cpu.set_p(p));
+pull16!(plx, cpu, cpu.x, cpu.m16());
+pull16!(ply, cpu, cpu.y, cpu.m16());
 
 fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     let b16 = cpu.a16();
@@ -676,10 +713,10 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::Direct), // 25
     (todo, AddressingMode::Implied), // 26
     (and, AddressingMode::DirectIndirectLong), // 27
-    (todo, AddressingMode::Implied), // 28
+    (plp, AddressingMode::Implied), // 28
     (and, AddressingMode::Immediate), // 29
     (todo, AddressingMode::Implied), // 2a
-    (todo, AddressingMode::Implied), // 2b
+    (pld, AddressingMode::Implied), // 2b
     (todo, AddressingMode::Implied), // 2c
     (and, AddressingMode::Absolute), // 2d
     (todo, AddressingMode::Implied), // 2e
@@ -740,7 +777,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 65
     (todo, AddressingMode::Implied), // 66
     (todo, AddressingMode::Implied), // 67
-    (todo, AddressingMode::Implied), // 68
+    (pla, AddressingMode::Implied), // 68
     (todo, AddressingMode::Implied), // 69
     (todo, AddressingMode::Implied), // 6a
     (rts, AddressingMode::AbsoluteLong), // 6b
@@ -758,7 +795,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // 77
     (sei, AddressingMode::Implied), // 78
     (todo, AddressingMode::Implied), // 79
-    (todo, AddressingMode::Implied), // 7a
+    (ply, AddressingMode::Implied), // 7a
     (tdc, AddressingMode::Implied), // 7b
     (todo, AddressingMode::Implied), // 7c
     (todo, AddressingMode::Implied), // 7d
@@ -807,7 +844,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (tay, AddressingMode::Implied), // a8
     (lda, AddressingMode::Immediate), // a9
     (tax, AddressingMode::Implied), // aa
-    (todo, AddressingMode::Implied), // ab
+    (plb, AddressingMode::Implied), // ab
     (ldy, AddressingMode::Absolute), // ac
     (lda, AddressingMode::Absolute), // ad
     (ldx, AddressingMode::Absolute), // ae
@@ -886,7 +923,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // f7
     (sed, AddressingMode::Implied), // f8
     (todo, AddressingMode::Implied), // f9
-    (todo, AddressingMode::Implied), // fa
+    (plx, AddressingMode::Implied), // fa
     (xce, AddressingMode::Implied), // fb
     (jsr, AddressingMode::IndexedIndirectX), // fc
     (todo, AddressingMode::Implied), // fd
