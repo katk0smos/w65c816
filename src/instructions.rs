@@ -433,7 +433,6 @@ fn rti(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         6 => {
             let data = cpu.stack_pop(sys);
             cpu.pbr = data;
-            cpu.pc = cpu.pc.wrapping_add(1);
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
