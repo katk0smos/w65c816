@@ -1,6 +1,6 @@
 [package]
 name = "w65c816"
-description = "An emulator for the WDC W65C816S, a 16-bit derivative of the 6502."
+description = "WIP! An emulator for the WDC W65C816S, a 16-bit derivative of the 6502."
 authors = ["katkosmos <kat@katkosmos.dev>"]
 keywords = ["6502", "65816", "wdc", "mos", "65c02"]
 categories = ["emulators", "no-std::no-alloc"]
@@ -10,7 +10,7 @@ documentation = "https://docs.rs/w65c816"
 license = "MIT"
 readme = "README.md"
 
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
