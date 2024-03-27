@@ -876,7 +876,6 @@ impl CPU {
             }
             State::Interrupt { vector, set_brk } => interrupt(self, system, vector, true, set_brk),
             State::Brk => {
-                panic!();
                 let vector = if self.flags.emulation { 0xfffe } else { 0xffe6 };
 
                 match (self.tcu, self.flags.emulation) {
