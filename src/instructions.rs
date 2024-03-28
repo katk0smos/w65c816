@@ -298,13 +298,13 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         }
         (6, IDX_IN) => {
             // pbr,aa+x
-            let pc = ((cpu.pbr as u32) << 16) | ((cpu.temp_addr+cpu.x) as u32);
+            let pc = ((cpu.pbr as u32) << 16) | ((cpu.temp_addr.wrapping_add(cpu.x)) as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
             ByteRef::Low(&mut cpu.temp_data).set(data);
         }
         (7, IDX_IN) => {
             // pbr,aa+x+1
-            let pc = ((cpu.pbr as u32) << 16) | ((1+cpu.temp_addr+cpu.x) as u32);
+            let pc = ((cpu.pbr as u32) << 16) | ((cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1)) as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
             ByteRef::High(&mut cpu.temp_data).set(data);
             cpu.pc = cpu.temp_data;
@@ -491,15 +491,15 @@ fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let l = l as u16;
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::Low(&mut cpu.a).get() as u16;
-            let mut r = a + l + c;
+            let mut r = a.wrapping_add(l).wrapping_add(c);
             // handle decimal mode
             if cpu.flags.decimal {
                 if (a ^ l ^ r) & 0x10 != 0 {
-                    r += 6;
+                    r = r.wrapping_add(6);
                 }
 
                 if (r & 0xf0) > 0x90 {
-                    r += 0x60;
+                    r = r.wrapping_add(0x60);
                 }
             }
             ByteRef::Low(&mut cpu.a).set(r as u8);
@@ -515,15 +515,15 @@ fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let h = h as u16;
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::High(&mut cpu.a).get() as u16;
-            let mut r = a + h + c;
+            let mut r = a.wrapping_add(h).wrapping_add(c);
             // handle decimal mode
             if cpu.flags.decimal {
                 if (a ^ h ^ r) & 0x10 != 0 {
-                    r += 6;
+                    r = r.wrapping_add(6);
                 }
 
                 if (r & 0xf0) > 0x90 {
-                    r += 0x60;
+                    r = r.wrapping_add(0x60);
                 }
             }
             ByteRef::High(&mut cpu.a).set(r as u8);
@@ -740,6 +740,26 @@ fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn inc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let b16 = cpu.a16();
+    let res = am.rwb(cpu, sys, |cpu, mut v, b16| if b16 {
+        v = v.wrapping_add(1);
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = v >> 15 != 0;
+        v
+    } else {
+        let mut v = v as u8;
+        v = v.wrapping_add(1);
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = v >> 7 != 0;
+        v as u16
+    }, b16);
+
+    if let Some(TaggedByte::Data(Byte::Low(_))) = res {
+        cpu.state = State::Fetch;
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk_cop, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                         // machine as State::Brk)
@@ -768,7 +788,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ora, AddressingMode::DirectIndirectLongIndexedY), // 17
     (clc, AddressingMode::Implied), // 18
     (ora, AddressingMode::AbsoluteIndexedY), // 19
-    (todo, AddressingMode::Implied), // 1a
+    (inc, AddressingMode::Accumulator), // 1a
     (tcs, AddressingMode::Implied), // 1b
     (todo, AddressingMode::Implied), // 1c
     (ora, AddressingMode::AbsoluteIndexedX), // 1d
@@ -972,7 +992,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // e3
     (todo, AddressingMode::Implied), // e4
     (todo, AddressingMode::Implied), // e5
-    (todo, AddressingMode::Implied), // e6
+    (inc, AddressingMode::Direct), // e6
     (todo, AddressingMode::Implied), // e7
     (todo, AddressingMode::Implied), // e8
     (todo, AddressingMode::Implied), // e9
@@ -980,7 +1000,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // eb
     (todo, AddressingMode::Implied), // ec
     (todo, AddressingMode::Implied), // ed
-    (todo, AddressingMode::Implied), // ee
+    (inc, AddressingMode::Absolute), // ee
     (todo, AddressingMode::Implied), // ef
     (beq, AddressingMode::Immediate), // f0
     (todo, AddressingMode::Implied), // f1
@@ -988,7 +1008,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // f3
     (todo, AddressingMode::Implied), // f4
     (todo, AddressingMode::Implied), // f5
-    (todo, AddressingMode::Implied), // f6
+    (inc, AddressingMode::DirectIndexedX), // f6
     (todo, AddressingMode::Implied), // f7
     (sed, AddressingMode::Implied), // f8
     (todo, AddressingMode::Implied), // f9
@@ -996,6 +1016,6 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (xce, AddressingMode::Implied), // fb
     (jsr, AddressingMode::IndexedIndirectX), // fc
     (todo, AddressingMode::Implied), // fd
-    (todo, AddressingMode::Implied), // fe
+    (inc, AddressingMode::AbsoluteIndexedX), // fe
     (todo, AddressingMode::Implied), // ff
 ];
