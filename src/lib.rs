@@ -421,7 +421,7 @@ impl AddressingMode {
                 3 => {
                     let offset = ByteRef::Low(&mut cpu.temp_addr).get() as u16;
                     let effective = if cpu.flags.emulation {
-                        let mut s = ByteRef::Low(&mut cpu.s).get() as u16 + offset;
+                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
                         (1 << 8) | ByteRef::Low(&mut s).get() as u16
                     } else {
                         cpu.s.wrapping_add(offset)
@@ -431,9 +431,9 @@ impl AddressingMode {
                     Some(TaggedByte::Data(Byte::Low(data)))
                 }
                 4 => {
-                    let offset = ByteRef::Low(&mut cpu.temp_addr).get() as u16 + 1;
+                    let offset = (ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1);
                     let effective = if cpu.flags.emulation {
-                        let mut s = ByteRef::Low(&mut cpu.s).get() as u16 + offset;
+                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
                         (1 << 8) | ByteRef::Low(&mut s).get() as u16
                     } else {
                         cpu.s.wrapping_add(offset)
