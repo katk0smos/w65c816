@@ -15,17 +15,28 @@ mod instructions;
 /// Any given function will be called once per cycle, but not all functions
 /// will be called every cycle.
 pub trait System {
+    /// Read access
     fn read(&mut self, addr: u32, addr_type: AddressType, signals: &Signals) -> u8;
+    
+    /// Write access
     fn write(&mut self, addr: u32, data: u8, addr_type: AddressType, signals: &Signals);
+    
+    /// IRQ
     fn irq(&mut self) -> bool {
         false
     }
+
+    /// NMI
     fn nmi(&mut self) -> bool {
         false
     }
+
+    /// RES
     fn res(&mut self) -> bool {
         false
     }
+
+    /// RDY
     fn rdy(&mut self) -> bool {
         true
     }
@@ -38,6 +49,7 @@ pub trait System {
     }
 }
 
+/// Address type of access
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AddressType {
     Invalid,
@@ -69,18 +81,6 @@ impl AddressType {
     pub fn into_vpb(&self) -> bool {
         !matches!(self, AddressType::Vector)
     }
-}
-
-/// Extended CPU Register
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum ExtRegister {
-    A,
-    X,
-    Y,
-    P,
-    D,
-    Pbr,
-    Dbr,
 }
 
 /// CPU Signals
@@ -710,6 +710,8 @@ pub struct CPU {
     /// Tempoary scratch register for internal use.
     /// Used for storing a bank address
     temp_bank: u8,
+    /// Last NMI (for edge triggered)
+    last_nmi: bool,
 }
 
 impl Default for CPU {
@@ -735,6 +737,7 @@ impl Default for CPU {
             temp_addr: 0,
             temp_data: 0,
             temp_bank: 0,
+            last_nmi: false,
         }
     }
 }
@@ -933,7 +936,8 @@ impl CPU {
                     self.wai = false;
                     self.state = State::Reset;
                     return;
-                } else if nmi {
+                } else if nmi && !self.last_nmi {
+                    self.last_nmi = true;
                     self.ir = 0x00;
                     self.wai = false;
                     self.state = State::Interrupt {
@@ -941,17 +945,23 @@ impl CPU {
                         set_brk: false,
                     };
                     return;
-                } else if irq {
-                    let had_wai = self.wai;
-                    self.wai = false;
+                } else {
+                    if !nmi {
+                        self.last_nmi = false;
+                    }
 
-                    if !had_wai || !self.flags.interrupt_disable {
-                        self.ir = 0x00;
-                        self.state = State::Interrupt {
-                            vector: if self.flags.emulation { 0xfffe } else { 0xffee },
-                            set_brk: false,
-                        };
-                        return;
+                    if irq {
+                        let had_wai = self.wai;
+                        self.wai = false;
+
+                        if !had_wai || !self.flags.interrupt_disable {
+                            self.ir = 0x00;
+                            self.state = State::Interrupt {
+                                vector: if self.flags.emulation { 0xfffe } else { 0xffee },
+                                set_brk: false,
+                            };
+                            return;
+                        }
                     }
                 }
 
