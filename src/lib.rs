@@ -476,7 +476,7 @@ impl AddressingMode {
                 }
                 _ => todo!("d,x")
             }
-            _ => todo!(),
+            am => todo!("read {am:?}"),
         }
     }
 

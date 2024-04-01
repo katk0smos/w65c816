@@ -314,9 +314,37 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn jml(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_addr).set(data);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        2 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            ByteRef::High(&mut cpu.temp_addr).set(data);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        3 => {
+            let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(pc, AddressType::Program, &cpu.signals);
+            cpu.pbr = data;
+            cpu.pc = cpu.temp_addr;
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
-    if matches!(am, AddressingMode::AbsoluteLong | AddressingMode::IndirectLong) {
-        todo!("{am:?}");
+    match am {
+        AddressingMode::IndirectLong => {
+            todo!("jmp [abs]")
+        }
+        _ => (),
     }
 
     match am.read(cpu, sys) {
@@ -926,7 +954,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::AbsoluteIndexedY), // 59
     (phy, AddressingMode::Implied), // 5a
     (tcd, AddressingMode::Implied), // 5b
-    (jmp, AddressingMode::AbsoluteLong), // 5c
+    (jml, AddressingMode::AbsoluteLong), // 5c
     (eor, AddressingMode::AbsoluteIndexedX), // 5d
     (todo, AddressingMode::Implied), // 5e
     (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
