@@ -474,7 +474,50 @@ impl AddressingMode {
                     let value = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(value)))
                 }
-                _ => todo!("d,x")
+                _ => None,
+            }
+            AddressingMode::AbsoluteIndexedX => {
+                let add_extra_cycle = (!cpu.flags.emulation && cpu.m16())
+                    || (cpu.tcu > 2 && (
+                        (cpu.temp_addr & 0xff).wrapping_add(cpu.x & 0xff) > 0xff
+                    ));
+
+                match (cpu.tcu, add_extra_cycle) {
+                    (1, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let data = system.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::Low(&mut cpu.temp_addr).set(data);
+                        None
+                    }
+                    (2, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let data = system.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::High(&mut cpu.temp_addr).set(data);
+                        None
+                    }
+                    (3, true) => {
+                        let x = ByteRef::Low(&mut cpu.x).get();
+                        let a = cpu.temp_addr as u8;
+                        let a = a.wrapping_add(x);
+                        let a = (cpu.temp_addr & 0xff00) | a as u16;
+                        let effective = ((cpu.dbr as u32) << 16) | (a as u32);
+                        let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
+                        None
+                    }
+                    (4, true) | (3, false) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x) as u32);
+                        let data = system.read(effective, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::Low(data)))
+                    }
+                    (5, true) | (4, false) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1) as u32);
+                        let data = system.read(effective, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::High(data)))
+                    }
+                    _ => None,
+                }
             }
             am => todo!("read {am:?}"),
         }
