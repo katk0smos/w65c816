@@ -892,6 +892,37 @@ macro_rules! push_effective {
 push_effective!(pea);
 push_effective!(pei);
 
+fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(effective, AddressType::Program, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+            ByteRef::Low(&mut cpu.temp_addr).set(data);
+        }
+        2 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(effective, AddressType::Program, &cpu.signals);
+            ByteRef::High(&mut cpu.temp_addr).set(data);
+        }
+        3 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+            cpu.temp_addr = cpu.temp_addr.wrapping_add(cpu.pc);
+        }
+        4 => {
+            let data = ByteRef::High(&mut cpu.temp_addr).get();
+            cpu.stack_push(sys, data, false);
+        }
+        5 => {
+            let data = ByteRef::Low(&mut cpu.temp_addr).get();
+            cpu.stack_push(sys, data, false);
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk_cop, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                         // machine as State::Brk)
