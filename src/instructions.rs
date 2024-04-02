@@ -115,18 +115,26 @@ fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            ByteRef::Low(&mut cpu.a).set(l);
-            cpu.flags.zero = l == 0;
+            if !cpu.aborted {
+                ByteRef::Low(&mut cpu.a).set(l);
+                cpu.flags.zero = l == 0;
+            }
+
             if cpu.a8() {
                 cpu.state = State::Fetch;
-                cpu.flags.negative = l >> 7 != 0;
+
+                if !cpu.aborted {
+                    cpu.flags.negative = l >> 7 != 0;
+                }
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
-            ByteRef::High(&mut cpu.a).set(h);
             cpu.state = State::Fetch;
-            cpu.flags.negative = h >> 7 != 0;
-            cpu.flags.zero = cpu.flags.zero && h == 0;
+            if !cpu.aborted {
+                ByteRef::High(&mut cpu.a).set(h);
+                cpu.flags.negative = h >> 7 != 0;
+                cpu.flags.zero = cpu.flags.zero && h == 0;
+            }
         }
         _ => (),
     }
@@ -135,18 +143,25 @@ fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 fn ldx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            ByteRef::Low(&mut cpu.x).set(l);
-            cpu.flags.zero = l == 0;
+            if !cpu.aborted {
+                ByteRef::Low(&mut cpu.x).set(l);
+                cpu.flags.zero = l == 0;
+            }
+
             if cpu.m8() {
                 cpu.state = State::Fetch;
-                cpu.flags.negative = l >> 7 != 0;
+                if !cpu.aborted {
+                    cpu.flags.negative = l >> 7 != 0;
+                }
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
-            ByteRef::High(&mut cpu.x).set(h);
             cpu.state = State::Fetch;
-            cpu.flags.negative = h >> 7 != 0;
-            cpu.flags.zero = cpu.flags.zero && h == 0;
+            if !cpu.aborted {
+                ByteRef::High(&mut cpu.x).set(h);
+                cpu.flags.negative = h >> 7 != 0;
+                cpu.flags.zero = cpu.flags.zero && h == 0;
+            }
         }
         _ => (),
     }
@@ -155,18 +170,25 @@ fn ldx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 fn ldy(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            ByteRef::Low(&mut cpu.y).set(l);
-            cpu.flags.zero = l == 0;
+            if !cpu.aborted {
+                ByteRef::Low(&mut cpu.y).set(l);
+                cpu.flags.zero = l == 0;
+            }
+
             if cpu.m8() {
                 cpu.state = State::Fetch;
-                cpu.flags.negative = l >> 7 != 0;
+                if !cpu.aborted {
+                    cpu.flags.negative = l >> 7 != 0;
+                }
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
-            ByteRef::High(&mut cpu.y).set(h);
             cpu.state = State::Fetch;
-            cpu.flags.negative = h >> 7 != 0;
-            cpu.flags.zero = cpu.flags.zero && h == 0;
+            if !cpu.aborted {
+                ByteRef::High(&mut cpu.y).set(h);
+                cpu.flags.negative = h >> 7 != 0;
+                cpu.flags.zero = cpu.flags.zero && h == 0;
+            }
         }
         _ => (),
     }
@@ -239,10 +261,13 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             cpu.stack_push(sys, cpu.pbr, false);
         }
         4 => {
-            let mut s = cpu.s.wrapping_add(1);
-            if cpu.flags.emulation {
-                ByteRef::High(&mut s).set(0x01);
+            if !cpu.aborted {
+                let mut s = cpu.s.wrapping_add(1);
+                if cpu.flags.emulation {
+                    ByteRef::High(&mut s).set(0x01);
+                }
             }
+
             sys.read(s as u32, AddressType::Invalid, &cpu.signals);
         }
         5 => {
@@ -257,8 +282,10 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         7 => {
             let pc = ByteRef::Low(&mut cpu.pc).get();
             cpu.stack_push(sys, pc, false);
-            cpu.pc = cpu.temp_addr;
-            cpu.pbr = cpu.temp_bank;
+            if !cpu.abprted {
+                cpu.pc = cpu.temp_addr;
+                cpu.pbr = cpu.temp_bank;
+            }
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
@@ -292,7 +319,10 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let pc = ByteRef::Low(&mut cpu.pc).get();
             cpu.stack_push(sys, pc, false);
             if am == ABS {
-                cpu.pc = cpu.temp_addr;
+                if !cpu.aborted {
+                    cpu.pc = cpu.temp_addr;
+                }
+
                 cpu.state = State::Fetch;
             }
         }
@@ -307,7 +337,10 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let pc = ((cpu.pbr as u32) << 16) | ((cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1)) as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
             ByteRef::High(&mut cpu.temp_data).set(data);
-            cpu.pc = cpu.temp_data;
+            if !cpu.aborted {
+                cpu.pc = cpu.temp_data;
+            }
+
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
@@ -331,8 +364,10 @@ fn jml(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         3 => {
             let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
-            cpu.pbr = data;
-            cpu.pc = cpu.temp_addr;
+            if !cpu.aborted {
+                cpu.pbr = data;
+                cpu.pc = cpu.temp_addr;
+            }
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
