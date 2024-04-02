@@ -720,7 +720,7 @@ macro_rules! branch {
 branch!(bcc, cpu, !cpu.flags.carry);
 branch!(bcs, cpu, cpu.flags.carry);
 branch!(bne, cpu, !cpu.flags.zero);
-branch!(beq, cpu, cpu.flags.carry);
+branch!(beq, cpu, cpu.flags.zero);
 branch!(bpl, cpu, !cpu.flags.negative);
 branch!(bmi, cpu, cpu.flags.negative);
 branch!(bvc, cpu, !cpu.flags.overflow);
@@ -859,6 +859,38 @@ fn dec(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         cpu.state = State::Fetch;
     }
 }
+
+macro_rules! push_effective {
+    ($name:ident) => {
+        fn $name(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+            if cpu.tcu == 1 {
+                cpu.temp_bank = 0;
+            }
+
+            match cpu.temp_bank {
+                1 => {
+                    cpu.stack_push(sys, (cpu.temp_data >> 8) as u8, false);
+                    cpu.temp_bank += 1;
+                }
+                2 => {
+                    cpu.stack_push(sys, cpu.temp_data as u8, false);
+                    cpu.state = State::Fetch;
+                }
+                _ => match am.read(cpu, sys) {
+                    Some(TaggedByte::Data(Byte::Low(l))) => cpu.temp_data = l as u16,
+                    Some(TaggedByte::Data(Byte::High(h))) => {
+                        cpu.temp_data |= (h as u16) << 8;
+                        cpu.temp_bank = 1;
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
+}
+
+push_effective!(pea);
+push_effective!(pei);
 
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk_cop, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
@@ -1074,7 +1106,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // d1
     (todo, AddressingMode::Implied), // d2
     (todo, AddressingMode::Implied), // d3
-    (todo, AddressingMode::Implied), // d4
+    (pei, AddressingMode::Direct), // d4
     (todo, AddressingMode::Implied), // d5
     (dec, AddressingMode::DirectIndexedX), // d6
     (todo, AddressingMode::Implied), // d7
@@ -1106,7 +1138,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sbc, AddressingMode::DirectIndirectIndexedY), // f1
     (sbc, AddressingMode::DirectIndirect), // f2
     (sbc, AddressingMode::StackRelIndirectIndexedY), // f3
-    (todo, AddressingMode::Implied), // f4
+    (pea, AddressingMode::Immediate), // f4
     (sbc, AddressingMode::DirectIndexedX), // f5
     (inc, AddressingMode::DirectIndexedX), // f6
     (sbc, AddressingMode::DirectIndirectLongIndexedY), // f7
