@@ -923,6 +923,28 @@ fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+fn bit(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            let a = ByteRef::Low(&mut cpu.a).get();
+            cpu.flags.zero = l & a == 0;
+            if cpu.a8() {
+                cpu.flags.negative = l >> 7 != 0;
+                cpu.flags.overflow = (l >> 6) & 1 != 0;
+                cpu.state = State::Fetch;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            let a = ByteRef::High(&mut cpu.a).get();
+            cpu.flags.zero = cpu.flags.zero && h & a == 0;
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.overflow = (h >> 6) & 1 != 0;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
 pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (brk_cop, AddressingMode::Implied), // 00 (won't be implemented, this is directly in the state
                                         // machine as State::Brk)
@@ -961,7 +983,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::DirectIndirectX), // 21
     (jsr_al, AddressingMode::AbsoluteLong), // 22
     (and, AddressingMode::StackRel), // 23
-    (todo, AddressingMode::Implied), // 24
+    (bit, AddressingMode::Direct), // 24
     (and, AddressingMode::Direct), // 25
     (todo, AddressingMode::Implied), // 26
     (and, AddressingMode::DirectIndirectLong), // 27
@@ -969,7 +991,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::Immediate), // 29
     (todo, AddressingMode::Implied), // 2a
     (pld, AddressingMode::Implied), // 2b
-    (todo, AddressingMode::Implied), // 2c
+    (bit, AddressingMode::Absolute), // 2c
     (and, AddressingMode::Absolute), // 2d
     (todo, AddressingMode::Implied), // 2e
     (and, AddressingMode::AbsoluteLong), // 2f
@@ -977,7 +999,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::DirectIndirectIndexedY), // 31
     (and, AddressingMode::DirectIndirect), // 32
     (and, AddressingMode::StackRelIndirectIndexedY), // 33
-    (todo, AddressingMode::Implied), // 34
+    (bit, AddressingMode::DirectIndexedX), // 34
     (and, AddressingMode::DirectIndexedX), // 35
     (todo, AddressingMode::Implied), // 36
     (and, AddressingMode::DirectIndirectLongIndexedY), // 37
@@ -1062,7 +1084,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (stx, AddressingMode::Direct), // 86
     (sta, AddressingMode::DirectIndirectLong), // 87
     (todo, AddressingMode::Implied), // 88
-    (todo, AddressingMode::Implied), // 89
+    (bit, AddressingMode::Immediate), // 89
     (txa, AddressingMode::Implied), // 8a
     (phb, AddressingMode::Implied), // 8b
     (sty, AddressingMode::Absolute), // 8c
