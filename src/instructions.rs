@@ -49,6 +49,11 @@ fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
 }
 
+fn wdm(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    cpu.pc = cpu.pc.wrapping_add(1);
+}
+
 fn clc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
     cpu.flags.carry = false;
@@ -995,7 +1000,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::AbsoluteLongIndexedX), // 3f
     (rti, AddressingMode::Implied), // 40
     (eor, AddressingMode::DirectIndirectX), // 41
-    (todo, AddressingMode::Implied), // 42
+    (wdm, AddressingMode::Implied), // 42
     (eor, AddressingMode::StackRel), // 43
     (todo, AddressingMode::Implied), // 44
     (eor, AddressingMode::Direct), // 45
