@@ -9,17 +9,20 @@ pretty sparse, and as far as I know, none provide a bus-accurate cycle-accurate
 emulator with all signals.
 
 ## Warning
-This emulator is very WIP and is not complete. Many instructions are missing,
-and ABORT support is missing for many instructions.
+This emulator is very WIP and is not complete. Less than 60 instructions are
+missing, but quite a few addressing modes are missing. Correct instruction
+behavior has not been verified for many instructions.
 
 The external API is finalized, and you are free to base code off of this with
 the expectation that it will work at some point in the future.
 
 Current plans:
- - [ ] continue adding instructions
- - [ ] continue adding addressing modes
- - [ ] ensure ABORT is implemented for all instructions
- - [ ] tests, tests, and more tests
+- [ ] continue adding instructions
+- [ ] continue adding addressing modes
+- [x] ensure ABORT is implemented for all instructions
+  - [ ] ensure ABORT is implemented *correctly* (check with a real '816)
+- [ ] tests, tests, and more tests
+  - [ ] ideally generate tests from a real '816.
 
 I am not providing a table showing currently implemented instructions due to
 the effort involved. You'll either have to open `src/instructions.rs` and look
