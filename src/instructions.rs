@@ -15,10 +15,7 @@ fn io(cpu: &mut CPU, sys: &mut dyn System) {
 #[inline(always)]
 fn implied(cpu: &mut CPU, sys: &mut dyn System) {
     io(cpu, sys);
-
-    if cpu.tcu == 1 {
-        cpu.state = State::Fetch;
-    }
+    cpu.state = State::Fetch;
 }
 
 // doesn't need to be implemented, implemented as a state in the state machine
@@ -50,8 +47,10 @@ fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 }
 
 fn wdm(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
-    implied(cpu, sys);
+    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+    let _ = sys.read(effective, AddressType::Program, &cpu.signals);
     cpu.pc = cpu.pc.wrapping_add(1);
+    cpu.state = State::Fetch;
 }
 
 fn clc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
