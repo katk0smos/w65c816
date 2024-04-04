@@ -29,9 +29,7 @@ fn stp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     io(cpu, sys);
 
     if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.stp = true;
-        }
+        cpu.stp = true;
 
         cpu.state = State::Fetch;
     }
@@ -41,9 +39,7 @@ fn wai(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     io(cpu, sys);
 
     if cpu.tcu == 2 {
-        if !cpu.aborted {
-            cpu.wai = true;
-        }
+        cpu.wai = true;
 
         cpu.state = State::Fetch;
     }
@@ -55,56 +51,42 @@ fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 
 fn clc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.carry = false;
-    }
+    cpu.flags.carry = false;
 }
 
 fn sec(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.carry = true;
-    }
+    cpu.flags.carry = true;
 }
 
 fn cli(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.interrupt_disable = false;
-    }
+    cpu.flags.interrupt_disable = false;
 }
 
 fn sei(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.interrupt_disable = true;
-    }
+    cpu.flags.interrupt_disable = true;
 }
 
 fn cld(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.decimal = false;
-    }
+    cpu.flags.decimal = false;
 }
 
 fn sed(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.decimal = true;
-    }
+    cpu.flags.decimal = true;
 }
 
 fn clv(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if !cpu.aborted {
-        cpu.flags.overflow = false;
-    }
+    cpu.flags.overflow = false;
 }
 
 fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
-    if cpu.tcu == 1 && !cpu.aborted {
+    if cpu.tcu == 1 {
         let old_e = cpu.flags.emulation;
         cpu.flags.emulation = cpu.flags.carry;
         cpu.flags.carry = old_e;
@@ -115,26 +97,19 @@ fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            if !cpu.aborted {
-                ByteRef::Low(&mut cpu.a).set(l);
-                cpu.flags.zero = l == 0;
-            }
+            ByteRef::Low(&mut cpu.a).set(l);
+            cpu.flags.zero = l == 0;
 
             if cpu.a8() {
                 cpu.state = State::Fetch;
-
-                if !cpu.aborted {
-                    cpu.flags.negative = l >> 7 != 0;
-                }
+                cpu.flags.negative = l >> 7 != 0;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
             cpu.state = State::Fetch;
-            if !cpu.aborted {
-                ByteRef::High(&mut cpu.a).set(h);
-                cpu.flags.negative = h >> 7 != 0;
-                cpu.flags.zero = cpu.flags.zero && h == 0;
-            }
+            ByteRef::High(&mut cpu.a).set(h);
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
         }
         _ => (),
     }
@@ -143,25 +118,19 @@ fn lda(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 fn ldx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            if !cpu.aborted {
-                ByteRef::Low(&mut cpu.x).set(l);
-                cpu.flags.zero = l == 0;
-            }
+            ByteRef::Low(&mut cpu.x).set(l);
+            cpu.flags.zero = l == 0;
 
             if cpu.m8() {
                 cpu.state = State::Fetch;
-                if !cpu.aborted {
-                    cpu.flags.negative = l >> 7 != 0;
-                }
+                cpu.flags.negative = l >> 7 != 0;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
             cpu.state = State::Fetch;
-            if !cpu.aborted {
-                ByteRef::High(&mut cpu.x).set(h);
-                cpu.flags.negative = h >> 7 != 0;
-                cpu.flags.zero = cpu.flags.zero && h == 0;
-            }
+            ByteRef::High(&mut cpu.x).set(h);
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
         }
         _ => (),
     }
@@ -170,25 +139,19 @@ fn ldx(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 fn ldy(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
-            if !cpu.aborted {
-                ByteRef::Low(&mut cpu.y).set(l);
-                cpu.flags.zero = l == 0;
-            }
+            ByteRef::Low(&mut cpu.y).set(l);
+            cpu.flags.zero = l == 0;
 
             if cpu.m8() {
                 cpu.state = State::Fetch;
-                if !cpu.aborted {
-                    cpu.flags.negative = l >> 7 != 0;
-                }
+                cpu.flags.negative = l >> 7 != 0;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
             cpu.state = State::Fetch;
-            if !cpu.aborted {
-                ByteRef::High(&mut cpu.y).set(h);
-                cpu.flags.negative = h >> 7 != 0;
-                cpu.flags.zero = cpu.flags.zero && h == 0;
-            }
+            ByteRef::High(&mut cpu.y).set(h);
+            cpu.flags.negative = h >> 7 != 0;
+            cpu.flags.zero = cpu.flags.zero && h == 0;
         }
         _ => (),
     }
@@ -280,10 +243,8 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         7 => {
             let pc = ByteRef::Low(&mut cpu.pc).get();
             cpu.stack_push(sys, pc, false);
-            if !cpu.aborted {
-                cpu.pc = cpu.temp_addr;
-                cpu.pbr = cpu.temp_bank;
-            }
+            cpu.pc = cpu.temp_addr;
+            cpu.pbr = cpu.temp_bank;
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
@@ -317,9 +278,7 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let pc = ByteRef::Low(&mut cpu.pc).get();
             cpu.stack_push(sys, pc, false);
             if am == ABS {
-                if !cpu.aborted {
-                    cpu.pc = cpu.temp_addr;
-                }
+                cpu.pc = cpu.temp_addr;
 
                 cpu.state = State::Fetch;
             }
@@ -335,9 +294,7 @@ fn jsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let pc = ((cpu.pbr as u32) << 16) | ((cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1)) as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
             ByteRef::High(&mut cpu.temp_data).set(data);
-            if !cpu.aborted {
-                cpu.pc = cpu.temp_data;
-            }
+            cpu.pc = cpu.temp_data;
 
             cpu.state = State::Fetch;
         }
@@ -362,10 +319,8 @@ fn jml(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         3 => {
             let pc = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let data = sys.read(pc, AddressType::Program, &cpu.signals);
-            if !cpu.aborted {
-                cpu.pbr = data;
-                cpu.pc = cpu.temp_addr;
-            }
+            cpu.pbr = data;
+            cpu.pc = cpu.temp_addr;
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
@@ -402,7 +357,7 @@ fn sep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         _ => unreachable!(),
     };
 
-    if cpu.tcu == 1 && !cpu.aborted {
+    if cpu.tcu == 1 {
         cpu.flags.set_mask(data, true);
         cpu.signals.m = cpu.flags.mem_sel;
         cpu.signals.x = cpu.flags.index_sel;
@@ -428,7 +383,7 @@ fn rep(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         _ => unreachable!(),
     };
 
-    if cpu.tcu == 1 && !cpu.aborted {
+    if cpu.tcu == 1 {
         cpu.flags.set_mask(data, false);
         cpu.signals.m = cpu.flags.mem_sel;
         cpu.signals.x = cpu.flags.index_sel;
@@ -505,13 +460,11 @@ macro_rules! transfer {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             implied($cpu, sys);
             if $cpu.tcu == 2 {
-                if !$cpu.aborted {
-                    if $cond8 {
-                        let data = ByteRef::Low(&mut $r0).get();
-                        ByteRef::Low(&mut $r1).set(data);
-                    } else {
-                        $r1 = $r0;
-                    }
+                if $cond8 {
+                    let data = ByteRef::Low(&mut $r0).get();
+                    ByteRef::Low(&mut $r1).set(data);
+                } else {
+                    $r1 = $r0;
                 }
 
                 $cpu.state = State::Fetch;
@@ -533,9 +486,7 @@ macro_rules! transfer16 {
     ($name:ident, $cpu:ident, $r0:expr, $r1:expr) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             implied($cpu, sys);
-            if !$cpu.aborted {
-                $r1 = $r0;
-            }
+            $r1 = $r0;
             $cpu.state = State::Fetch;
         }
     }

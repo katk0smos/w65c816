@@ -707,6 +707,58 @@ pub(crate) enum State {
     Instruction(instructions::InstructionFn, AddressingMode),
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct Backup {
+    a: u16,
+    x: u16,
+    y: u16,
+    pc: u16,
+    s: u16,
+    d: u16,
+    flags: Flags,
+    pbr: u8,
+    dbr: u8,
+    wai: bool,
+    stp: bool,
+}
+
+impl From<&CPU> for Backup {
+    fn from(c: &CPU) -> Backup {
+        Backup {
+            a: c.a,
+            x: c.x,
+            y: c.y,
+            pc: c.pc,
+            s: c.s,
+            d: c.d,
+            flags: c.flags,
+            pbr: c.pbr,
+            dbr: c.dbr,
+            wai: c.wai,
+            stp: c.stp,
+        }
+    }
+}
+
+impl Backup {
+    fn restore(self, c: &mut CPU) {
+        *c = CPU {
+            a: self.a,
+            x: self.x,
+            y: self.y,
+            pc: self.pc,
+            s: self.s,
+            d: self.d,
+            flags: self.flags,
+            pbr: self.pbr,
+            dbr: self.dbr,
+            wai: self.wai,
+            stp: self.stp,
+            ..*c
+        };
+    }
+}
+
 /// 65c816
 #[derive(Clone, Debug)]
 pub struct CPU {
@@ -755,6 +807,8 @@ pub struct CPU {
     temp_bank: u8,
     /// Last NMI (for edge triggered)
     last_nmi: bool,
+    /// Backup regs for abort
+    backup: Backup,
 }
 
 impl Default for CPU {
@@ -781,6 +835,7 @@ impl Default for CPU {
             temp_data: 0,
             temp_bank: 0,
             last_nmi: false,
+            backup: Backup::default(),
         }
     }
 }
@@ -814,6 +869,7 @@ impl CPU {
 
         // Hijack the state for ABORTs
         if self.aborted && self.state == State::Fetch {
+            self.backup.restore(self);
             self.state = State::Abort;
         } else if abort {
             self.aborted = true;
@@ -972,6 +1028,8 @@ impl CPU {
 
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
+
+                self.backup = Backup::from(&*self);
 
                 if res {
                     self.ir = 0x00;
