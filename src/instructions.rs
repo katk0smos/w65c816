@@ -261,11 +261,9 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             cpu.stack_push(sys, cpu.pbr, false);
         }
         4 => {
-            if !cpu.aborted {
-                let mut s = cpu.s.wrapping_add(1);
-                if cpu.flags.emulation {
-                    ByteRef::High(&mut s).set(0x01);
-                }
+            let mut s = cpu.s.wrapping_add(1);
+            if cpu.flags.emulation {
+                ByteRef::High(&mut s).set(0x01);
             }
 
             sys.read(s as u32, AddressType::Invalid, &cpu.signals);
@@ -282,7 +280,7 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         7 => {
             let pc = ByteRef::Low(&mut cpu.pc).get();
             cpu.stack_push(sys, pc, false);
-            if !cpu.abprted {
+            if !cpu.aborted {
                 cpu.pc = cpu.temp_addr;
                 cpu.pbr = cpu.temp_bank;
             }
