@@ -129,7 +129,8 @@ fn nops_bench(b: &mut test::Bencher) {
         let mut cpu = cpu.clone();
 
         for _ in 0..2 {
-            black_box(cpu.cycle(&mut sys));
+            cpu.cycle(&mut sys);
+            black_box(());
         }
     });
 }

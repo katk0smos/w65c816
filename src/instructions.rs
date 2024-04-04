@@ -87,9 +87,7 @@ fn clv(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 fn xce(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
     if cpu.tcu == 1 {
-        let old_e = cpu.flags.emulation;
-        cpu.flags.emulation = cpu.flags.carry;
-        cpu.flags.carry = old_e;
+        core::mem::swap(&mut cpu.flags.emulation, &mut cpu.flags.carry);
         cpu.set_e(cpu.flags.emulation);
     }
 }

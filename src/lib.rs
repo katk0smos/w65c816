@@ -944,7 +944,7 @@ impl CPU {
                 }
 
                 match self.tcu {
-                    0 | 1 | 2 => {
+                    0..=2 => {
                         self.stp = false;
                         self.wai = false;
                         self.flags.emulation = true;
