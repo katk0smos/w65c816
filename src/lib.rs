@@ -604,6 +604,48 @@ impl AddressingMode {
                 }
                 _ => None,
             },
+            AddressingMode::StackRel => match cpu.tcu {
+                1 => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let offset = system.read(effective, AddressType::Program, &cpu.signals);
+                    cpu.pc = cpu.pc.wrapping_add(1);
+                    
+                    ByteRef::Low(&mut cpu.temp_addr).set(offset);
+                    Some(TaggedByte::Address(Byte::Low(offset)))
+                }
+                2 => {
+                    let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                    let _ = system.read(effective, AddressType::Invalid, &cpu.signals);
+                    None
+                }
+                3 => {
+                    let offset = ByteRef::Low(&mut cpu.temp_addr).get() as u16;
+                    let effective = if cpu.flags.emulation {
+                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
+                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
+                    } else {
+                        cpu.s.wrapping_add(offset)
+                    };
+                    
+                    let value = ByteRef::Low(&mut value).get();
+                    system.write(effective as u32, value, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::Low(value)))
+                }
+                4 => {
+                    let offset = (ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1);
+                    let effective = if cpu.flags.emulation {
+                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
+                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
+                    } else {
+                        cpu.s.wrapping_add(offset)
+                    };
+                    
+                    let value = ByteRef::High(&mut value).get();
+                    system.write(effective as u32, value, AddressType::Data, &cpu.signals);
+                    Some(TaggedByte::Data(Byte::High(value)))
+                }
+                _ => None,
+            }
             AddressingMode::Implied | AddressingMode::Immediate => None,
             am => todo!("write {am:?}"),
         }
@@ -1047,9 +1089,7 @@ impl CPU {
                     };
                     return;
                 } else {
-                    if !nmi {
-                        self.last_nmi = false;
-                    }
+                    self.last_nmi = nmi;
 
                     if irq {
                         let had_wai = self.wai;
