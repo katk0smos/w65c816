@@ -739,7 +739,7 @@ macro_rules! pull8 {
             match $cpu.tcu {
                 1 => {
                     let $v = $cpu.stack_pop(sys);
-                    $set;
+                    $set
                     $cpu.state = State::Fetch;
                 }
                 _ => unreachable!(),
