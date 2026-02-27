@@ -920,3 +920,95 @@ fn trb_direct_8bit() {
     assert_eq!(sys.ram[0x0010], 0x0F, "mem after trb no-overlap");
     assert!(cpu.flags.zero, "z (no overlap)");
 }
+
+#[test]
+fn mvn_basic() {
+    // Copy 3 bytes (C=2 means C+1=3) from bank 0x01:0x0100 to bank 0x02:0x0200
+    // MVN dst_bank, src_bank = 0x54, 0x02, 0x01
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // source data at 0x01:0100..0102
+    sys.ram[0x010100] = 0xAA;
+    sys.ram[0x010101] = 0xBB;
+    sys.ram[0x010102] = 0xCC;
+    sys.write_code(0x008000, &[0x54, 0x02, 0x01]); // MVN dst=0x02, src=0x01
+    for _ in 0..7 {
+        cpu.cycle(&mut sys); // reset
+    }
+    cpu.x = 0x0100;
+    cpu.y = 0x0200;
+    cpu.a = 0x0002; // C = 2 => copy 3 bytes
+    // 7 cycles per iteration (first: 1 fetch + 6 handler; subsequent: tcu=0..6) * 3 iterations
+    for _ in 0..7 * 3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x020200], 0xAA, "byte 0");
+    assert_eq!(sys.ram[0x020201], 0xBB, "byte 1");
+    assert_eq!(sys.ram[0x020202], 0xCC, "byte 2");
+    assert_eq!(cpu.x, 0x0103, "x after mvn");
+    assert_eq!(cpu.y, 0x0203, "y after mvn");
+    assert_eq!(cpu.a, 0xFFFF, "c after mvn");
+    assert_eq!(cpu.dbr, 0x02, "dbr after mvn");
+    assert_eq!(cpu.pc, 0x8003, "pc after mvn");
+}
+
+#[test]
+fn mvn_single_byte() {
+    // Copy 1 byte (C=0) from bank 0x00:0x0100 to bank 0x00:0x0200
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x000100] = 0x42;
+    sys.write_code(0x008000, &[0x54, 0x00, 0x00]); // MVN dst=0x00, src=0x00
+    for _ in 0..7 {
+        cpu.cycle(&mut sys);
+    }
+    cpu.x = 0x0100;
+    cpu.y = 0x0200;
+    cpu.a = 0x0000; // C = 0 => copy 1 byte
+    // 7 cycles for 1 iteration (1 fetch + 6 handler)
+    for _ in 0..7 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x000200], 0x42, "byte copied");
+    assert_eq!(cpu.x, 0x0101, "x incremented");
+    assert_eq!(cpu.y, 0x0201, "y incremented");
+    assert_eq!(cpu.a, 0xFFFF, "c wraps to 0xFFFF");
+    assert_eq!(cpu.pc, 0x8003, "pc after mvn");
+}
+
+#[test]
+fn mvp_basic() {
+    // Copy 3 bytes (C=2) from bank 0x01:0x0102 down to bank 0x02:0x0202 (descending)
+    // MVP dst_bank, src_bank = 0x44, 0x02, 0x01
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // source data at 0x01:0100..0102 (X starts at end: 0x0102)
+    sys.ram[0x010100] = 0xAA;
+    sys.ram[0x010101] = 0xBB;
+    sys.ram[0x010102] = 0xCC;
+    sys.write_code(0x008000, &[0x44, 0x02, 0x01]); // MVP dst=0x02, src=0x01
+    for _ in 0..7 {
+        cpu.cycle(&mut sys);
+    }
+    cpu.x = 0x0102; // start at end of source
+    cpu.y = 0x0202; // start at end of dest
+    cpu.a = 0x0002; // C = 2 => copy 3 bytes
+    // 7 cycles per iteration * 3 iterations
+    for _ in 0..7 * 3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x020202], 0xCC, "byte 0 (from src end)");
+    assert_eq!(sys.ram[0x020201], 0xBB, "byte 1");
+    assert_eq!(sys.ram[0x020200], 0xAA, "byte 2 (from src start)");
+    assert_eq!(cpu.x, 0x00FF, "x after mvp (decremented 3)");
+    assert_eq!(cpu.y, 0x01FF, "y after mvp (decremented 3)");
+    assert_eq!(cpu.a, 0xFFFF, "c after mvp");
+    assert_eq!(cpu.dbr, 0x02, "dbr after mvp");
+    assert_eq!(cpu.pc, 0x8003, "pc after mvp");
+}

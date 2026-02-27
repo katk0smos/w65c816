@@ -86,6 +86,106 @@ fn brl(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+fn mvn(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        0 => { // opcode re-read for loop iterations
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let _ = sys.read(ea, AddressType::Opcode, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        1 => { // dest bank byte
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            cpu.temp_bank = sys.read(ea, AddressType::Program, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        2 => { // src bank byte
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let sba = sys.read(ea, AddressType::Program, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_addr).set(sba);
+        }
+        3 => { // read source byte
+            let sba = ByteRef::Low(&mut cpu.temp_addr).get() as u32;
+            let data = sys.read((sba << 16) | cpu.x as u32, AddressType::Data, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_data).set(data);
+        }
+        4 => { // write dest byte
+            let dba = cpu.temp_bank as u32;
+            let data = ByteRef::Low(&mut cpu.temp_data).get();
+            sys.write((dba << 16) | cpu.y as u32, data, AddressType::Data, &cpu.signals);
+            cpu.dbr = cpu.temp_bank;
+        }
+        5 => { // IO
+            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
+        }
+        6 => { // IO + update + loop
+            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
+            cpu.x = cpu.x.wrapping_add(1);
+            cpu.y = cpu.y.wrapping_add(1);
+            cpu.a = cpu.a.wrapping_sub(1);
+            if cpu.a == 0xFFFF {
+                cpu.pc = cpu.pc.wrapping_add(1);
+                cpu.state = State::Fetch;
+            } else {
+                cpu.pc = cpu.pc.wrapping_sub(2);
+                cpu.tcu = 0xFF;
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn mvp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        0 => { // opcode re-read for loop iterations
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let _ = sys.read(ea, AddressType::Opcode, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        1 => { // dest bank byte
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            cpu.temp_bank = sys.read(ea, AddressType::Program, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        2 => { // src bank byte
+            let ea = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let sba = sys.read(ea, AddressType::Program, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_addr).set(sba);
+        }
+        3 => { // read source byte
+            let sba = ByteRef::Low(&mut cpu.temp_addr).get() as u32;
+            let data = sys.read((sba << 16) | cpu.x as u32, AddressType::Data, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_data).set(data);
+        }
+        4 => { // write dest byte
+            let dba = cpu.temp_bank as u32;
+            let data = ByteRef::Low(&mut cpu.temp_data).get();
+            sys.write((dba << 16) | cpu.y as u32, data, AddressType::Data, &cpu.signals);
+            cpu.dbr = cpu.temp_bank;
+        }
+        5 => { // IO
+            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
+        }
+        6 => { // IO + update + loop
+            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
+            cpu.x = cpu.x.wrapping_sub(1);
+            cpu.y = cpu.y.wrapping_sub(1);
+            cpu.a = cpu.a.wrapping_sub(1);
+            if cpu.a == 0xFFFF {
+                cpu.pc = cpu.pc.wrapping_add(1);
+                cpu.state = State::Fetch;
+            } else {
+                cpu.pc = cpu.pc.wrapping_sub(2);
+                cpu.tcu = 0xFF;
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn wdm(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
     let _ = sys.read(effective, AddressType::Program, &cpu.signals);
@@ -1254,7 +1354,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::DirectIndirectX), // 41
     (wdm, AddressingMode::Implied), // 42
     (eor, AddressingMode::StackRel), // 43
-    (todo, AddressingMode::Implied), // 44
+    (mvp, AddressingMode::Implied), // 44
     (eor, AddressingMode::Direct), // 45
     (lsr, AddressingMode::Direct), // 46
     (eor, AddressingMode::DirectIndirectLong), // 47
@@ -1270,7 +1370,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::DirectIndirectIndexedY), // 51
     (eor, AddressingMode::DirectIndirect), // 52
     (eor, AddressingMode::StackRelIndirectIndexedY), // 53
-    (todo, AddressingMode::Implied), // 54
+    (mvn, AddressingMode::Implied), // 54
     (eor, AddressingMode::DirectIndexedX), // 55
     (lsr, AddressingMode::DirectIndexedX), // 56
     (eor, AddressingMode::DirectIndirectLongIndexedY), // 57
