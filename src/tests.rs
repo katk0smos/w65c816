@@ -1012,3 +1012,211 @@ fn mvp_basic() {
     assert_eq!(cpu.dbr, 0x02, "dbr after mvp");
     assert_eq!(cpu.pc, 0x8003, "pc after mvp");
 }
+
+// ---- Write addressing mode tests ----
+
+fn boot(sys: &mut Sys) -> CPU {
+    let mut cpu = CPU::new();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    for _ in 0..7 {
+        cpu.cycle(sys);
+    }
+    cpu
+}
+
+#[test]
+fn sta_abs_long() {
+    // STA $02:5000 — opcode 8F
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x8F, 0x00, 0x50, 0x02]);
+    cpu.a = 0x0042;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x025000], 0x42, "sta abs long");
+    assert_eq!(cpu.pc, 0x8004);
+}
+
+#[test]
+fn sta_abs_long_indexed_x() {
+    // STA $02:4FFE,X with X=2 → write to $02:5000 — opcode 9F
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x9F, 0xFE, 0x4F, 0x02]);
+    cpu.a = 0x0043;
+    cpu.x = 0x0002;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x025000], 0x43, "sta abs long indexed x");
+    assert_eq!(cpu.pc, 0x8004);
+}
+
+#[test]
+fn sta_abs_indexed_x() {
+    // STA $5000,X with X=4, DBR=0 → write to $005004 — opcode 9D
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x9D, 0x00, 0x50]);
+    cpu.a = 0x0044;
+    cpu.x = 0x0004;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x005004], 0x44, "sta abs indexed x");
+    assert_eq!(cpu.pc, 0x8003);
+}
+
+#[test]
+fn sta_abs_indexed_y() {
+    // STA $5000,Y with Y=3, DBR=0 → write to $005003 — opcode 99
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x99, 0x00, 0x50]);
+    cpu.a = 0x0045;
+    cpu.y = 0x0003;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x005003], 0x45, "sta abs indexed y");
+    assert_eq!(cpu.pc, 0x8003);
+}
+
+#[test]
+fn sta_direct_indexed_x() {
+    // STA $10,X with D=0, X=5 → write to $0015 — opcode 95
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x95, 0x10]);
+    cpu.a = 0x0046;
+    cpu.x = 0x0005;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x0015], 0x46, "sta direct indexed x");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sty_direct_indexed_x() {
+    // STY $10,X with D=0, X=5 → write to $0015 — opcode 94
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x94, 0x10]);
+    cpu.y = 0x0047;
+    cpu.x = 0x0005;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x0015], 0x47, "sty direct indexed x");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn stz_direct_indexed_x() {
+    // STZ $10,X with D=0, X=5 → write 0 to $0015 — opcode 74
+    let mut sys = Sys::default();
+    sys.ram[0x0015] = 0xFF;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x74, 0x10]);
+    cpu.x = 0x0005;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x0015], 0x00, "stz direct indexed x");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn stx_direct_indexed_y() {
+    // STX $10,Y with D=0, Y=6 → write to $0016 — opcode 96
+    let mut sys = Sys::default();
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x96, 0x10]);
+    cpu.x = 0x0048;
+    cpu.y = 0x0006;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x0016], 0x48, "stx direct indexed y");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_direct_indirect() {
+    // STA ($10) with D=0, pointer at $0010-$0011 = $5000, DBR=0 → write to $005000 — opcode 92
+    let mut sys = Sys::default();
+    sys.ram[0x0010] = 0x00;
+    sys.ram[0x0011] = 0x50;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x92, 0x10]);
+    cpu.a = 0x0049;
+    for _ in 0..5 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x005000], 0x49, "sta direct indirect");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_direct_indirect_long() {
+    // STA [$10] with D=0, 3-byte pointer at $0010-$0012 = $02:5000 → write to $025000 — opcode 87
+    let mut sys = Sys::default();
+    sys.ram[0x0010] = 0x00;
+    sys.ram[0x0011] = 0x50;
+    sys.ram[0x0012] = 0x02;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x87, 0x10]);
+    cpu.a = 0x004A;
+    for _ in 0..6 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x025000], 0x4A, "sta direct indirect long");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_direct_indirect_long_indexed_y() {
+    // STA [$10],Y with D=0, pointer $02:5000, Y=2 → write to $025002 — opcode 97
+    let mut sys = Sys::default();
+    sys.ram[0x0010] = 0x00;
+    sys.ram[0x0011] = 0x50;
+    sys.ram[0x0012] = 0x02;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x97, 0x10]);
+    cpu.a = 0x004B;
+    cpu.y = 0x0002;
+    for _ in 0..6 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x025002], 0x4B, "sta direct indirect long indexed y");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_direct_indirect_x() {
+    // STA ($10,X) with D=0, X=2, pointer at $0012-$0013 = $5000 → write to $005000 — opcode 81
+    let mut sys = Sys::default();
+    sys.ram[0x0012] = 0x00;
+    sys.ram[0x0013] = 0x50;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x81, 0x10]);
+    cpu.a = 0x004C;
+    cpu.x = 0x0002;
+    for _ in 0..6 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x005000], 0x4C, "sta direct indirect x");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_direct_indirect_indexed_y() {
+    // STA ($10),Y with D=0, pointer at $0010-$0011 = $4FFE, Y=2 → write to $005000 — opcode 91
+    let mut sys = Sys::default();
+    sys.ram[0x0010] = 0xFE;
+    sys.ram[0x0011] = 0x4F;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x91, 0x10]);
+    cpu.a = 0x004D;
+    cpu.y = 0x0002;
+    for _ in 0..6 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x005000], 0x4D, "sta direct indirect indexed y");
+    assert_eq!(cpu.pc, 0x8002);
+}
+
+#[test]
+fn sta_stack_rel_indirect_indexed_y() {
+    // STA ($10,S),Y in emulation mode — opcode 93
+    // S.L = 0xE0, SO = 0x10 → ptr address = 0x01F0
+    // Pointer at $01F0-$01F1 = $3000, Y=5 → write to $003005
+    let mut sys = Sys::default();
+    sys.ram[0x01F0] = 0x00;
+    sys.ram[0x01F1] = 0x30;
+    let mut cpu = boot(&mut sys);
+    sys.write_code(0x008000, &[0x93, 0x10]);
+    cpu.a = 0x004E;
+    cpu.y = 0x0005;
+    cpu.s = (cpu.s & 0xFF00) | 0x00E0;
+    for _ in 0..7 { cpu.cycle(&mut sys); }
+    assert_eq!(sys.ram[0x003005], 0x4E, "sta stack rel indirect indexed y");
+    assert_eq!(cpu.pc, 0x8002);
+}
