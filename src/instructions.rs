@@ -626,6 +626,66 @@ fn sbc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn cmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    match am.read(cpu, sys) {
+        Some(TaggedByte::Data(Byte::Low(l))) => {
+            let m = (!l) as u16;
+            let a = ByteRef::Low(&mut cpu.a).get() as u16;
+            let r = a.wrapping_add(m).wrapping_add(1);
+            cpu.flags.carry = r > 0xff;
+            cpu.flags.zero = r as u8 == 0;
+            if cpu.a8() {
+                cpu.flags.negative = r & 0x80 != 0;
+                cpu.state = State::Fetch;
+            }
+        }
+        Some(TaggedByte::Data(Byte::High(h))) => {
+            let m = (!h) as u16;
+            let c = if cpu.flags.carry { 1 } else { 0 };
+            let a = ByteRef::High(&mut cpu.a).get() as u16;
+            let r = a.wrapping_add(m).wrapping_add(c);
+            cpu.flags.carry = r > 0xff;
+            cpu.flags.negative = r & 0x80 != 0;
+            cpu.flags.zero = cpu.flags.zero && r as u8 == 0;
+            cpu.state = State::Fetch;
+        }
+        _ => (),
+    }
+}
+
+macro_rules! cmp_index {
+    ($name:ident, $reg:ident) => {
+        fn $name(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+            match am.read(cpu, sys) {
+                Some(TaggedByte::Data(Byte::Low(l))) => {
+                    let m = (!l) as u16;
+                    let a = ByteRef::Low(&mut cpu.$reg).get() as u16;
+                    let r = a.wrapping_add(m).wrapping_add(1);
+                    cpu.flags.carry = r > 0xff;
+                    cpu.flags.zero = r as u8 == 0;
+                    if cpu.m8() {
+                        cpu.flags.negative = r & 0x80 != 0;
+                        cpu.state = State::Fetch;
+                    }
+                }
+                Some(TaggedByte::Data(Byte::High(h))) => {
+                    let m = (!h) as u16;
+                    let c = if cpu.flags.carry { 1 } else { 0 };
+                    let a = ByteRef::High(&mut cpu.$reg).get() as u16;
+                    let r = a.wrapping_add(m).wrapping_add(c);
+                    cpu.flags.carry = r > 0xff;
+                    cpu.flags.negative = r & 0x80 != 0;
+                    cpu.flags.zero = cpu.flags.zero && r as u8 == 0;
+                    cpu.state = State::Fetch;
+                }
+                _ => (),
+            }
+        }
+    }
+}
+cmp_index!(cpx, x);
+cmp_index!(cpy, y);
+
 fn and(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
@@ -1148,43 +1208,43 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (lda, AddressingMode::AbsoluteIndexedX), // bd
     (ldx, AddressingMode::AbsoluteIndexedY), // be
     (lda, AddressingMode::AbsoluteLongIndexedX), // bf
-    (todo, AddressingMode::Implied), // c0
-    (todo, AddressingMode::Implied), // c1
+    (cpy, AddressingMode::Immediate), // c0
+    (cmp, AddressingMode::DirectIndirectX), // c1
     (rep, AddressingMode::Immediate), // c2
-    (todo, AddressingMode::Implied), // c3
-    (todo, AddressingMode::Implied), // c4
-    (todo, AddressingMode::Implied), // c5
+    (cmp, AddressingMode::StackRel), // c3
+    (cpy, AddressingMode::Direct), // c4
+    (cmp, AddressingMode::Direct), // c5
     (dec, AddressingMode::Direct), // c6
-    (todo, AddressingMode::Implied), // c7
+    (cmp, AddressingMode::DirectIndirectLong), // c7
     (iny, AddressingMode::Implied), // c8
-    (todo, AddressingMode::Implied), // c9
+    (cmp, AddressingMode::Immediate), // c9
     (dex, AddressingMode::Implied), // ca
     (wai, AddressingMode::Implied), // cb
-    (todo, AddressingMode::Implied), // cc
-    (todo, AddressingMode::Implied), // cd
+    (cpy, AddressingMode::Absolute), // cc
+    (cmp, AddressingMode::Absolute), // cd
     (dec, AddressingMode::Absolute), // ce
-    (todo, AddressingMode::Implied), // cf
+    (cmp, AddressingMode::AbsoluteLong), // cf
     (bne, AddressingMode::Immediate), // d0
-    (todo, AddressingMode::Implied), // d1
-    (todo, AddressingMode::Implied), // d2
-    (todo, AddressingMode::Implied), // d3
+    (cmp, AddressingMode::DirectIndirectIndexedY), // d1
+    (cmp, AddressingMode::DirectIndirect), // d2
+    (cmp, AddressingMode::StackRelIndirectIndexedY), // d3
     (pei, AddressingMode::Direct), // d4
-    (todo, AddressingMode::Implied), // d5
+    (cmp, AddressingMode::DirectIndexedX), // d5
     (dec, AddressingMode::DirectIndexedX), // d6
-    (todo, AddressingMode::Implied), // d7
+    (cmp, AddressingMode::DirectIndirectLongIndexedY), // d7
     (cld, AddressingMode::Implied), // d8
-    (todo, AddressingMode::Implied), // d9
+    (cmp, AddressingMode::AbsoluteIndexedY), // d9
     (phx, AddressingMode::Implied), // da
     (stp, AddressingMode::Implied), // db
     (jmp, AddressingMode::IndirectLong), // dc
-    (todo, AddressingMode::Implied), // dd
+    (cmp, AddressingMode::AbsoluteIndexedX), // dd
     (dec, AddressingMode::AbsoluteIndexedX), // de
-    (todo, AddressingMode::Implied), // df
-    (todo, AddressingMode::Implied), // e0
+    (cmp, AddressingMode::AbsoluteLongIndexedX), // df
+    (cpx, AddressingMode::Immediate), // e0
     (sbc, AddressingMode::DirectIndirectX), // e1
     (sep, AddressingMode::Immediate), // e2
     (sbc, AddressingMode::StackRel), // e3
-    (todo, AddressingMode::Implied), // e4
+    (cpx, AddressingMode::Direct), // e4
     (sbc, AddressingMode::Direct), // e5
     (inc, AddressingMode::Direct), // e6
     (sbc, AddressingMode::DirectIndirectLong), // e7
@@ -1192,7 +1252,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sbc, AddressingMode::Immediate), // e9
     (nop, AddressingMode::Implied), // ea
     (todo, AddressingMode::Implied), // eb
-    (todo, AddressingMode::Implied), // ec
+    (cpx, AddressingMode::Absolute), // ec
     (sbc, AddressingMode::Absolute), // ed
     (inc, AddressingMode::Absolute), // ee
     (sbc, AddressingMode::AbsoluteLong), // ef

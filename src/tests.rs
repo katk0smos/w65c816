@@ -419,3 +419,82 @@ fn irq() {
     assert!(!cpu.flags.carry, "c");
     assert!(cpu.flags.zero, "z");
 }
+
+fn run_cmp_imm_8(a: u8, m: u8) -> (bool, bool, bool) {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // LDA #a ; CMP #m (8-bit emulation mode)
+    sys.write_code(0x008000, &[0xA9, a, 0xC9, m]);
+    for _ in 0..7 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    (cpu.flags.negative, cpu.flags.zero, cpu.flags.carry)
+}
+
+fn run_cmp_imm_16(a: u16, m: u16) -> (bool, bool, bool) {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // CLC; XCE; CLC; REP #$30; LDA #a; CMP #m  (16-bit mode)
+    sys.write_code(
+        0x008000,
+        &[
+            0x18,                                 // CLC
+            0xFB,                                 // XCE
+            0x18,                                 // CLC
+            0xC2, 0x30,                           // REP #$30
+            0xA9, (a & 0xff) as u8, (a >> 8) as u8,   // LDA #a
+            0xC9, (m & 0xff) as u8, (m >> 8) as u8,   // CMP #m
+        ],
+    );
+    // 7 reset + 2+2+2+3+3+3 instructions
+    for _ in 0..7 + 2 + 2 + 2 + 3 + 3 + 3 {
+        cpu.cycle(&mut sys);
+    }
+    (cpu.flags.negative, cpu.flags.zero, cpu.flags.carry)
+}
+
+#[test]
+fn cmp_immediate_8bit() {
+    // A < M: N=1, Z=0, C=0
+    let (n, z, c) = run_cmp_imm_8(0x40, 0x60);
+    assert!(n, "n: A<M");
+    assert!(!z, "z: A<M");
+    assert!(!c, "c: A<M");
+
+    // A == M: N=0, Z=1, C=1
+    let (n, z, c) = run_cmp_imm_8(0x50, 0x50);
+    assert!(!n, "n: A==M");
+    assert!(z, "z: A==M");
+    assert!(c, "c: A==M");
+
+    // A > M: N=0, Z=0, C=1
+    let (n, z, c) = run_cmp_imm_8(0x70, 0x50);
+    assert!(!n, "n: A>M");
+    assert!(!z, "z: A>M");
+    assert!(c, "c: A>M");
+}
+
+#[test]
+fn cmp_immediate_16bit() {
+    // A < M: N=1, Z=0, C=0
+    let (n, z, c) = run_cmp_imm_16(0x1234, 0x2000);
+    assert!(n, "n: A<M");
+    assert!(!z, "z: A<M");
+    assert!(!c, "c: A<M");
+
+    // A == M: N=0, Z=1, C=1
+    let (n, z, c) = run_cmp_imm_16(0x1234, 0x1234);
+    assert!(!n, "n: A==M");
+    assert!(z, "z: A==M");
+    assert!(c, "c: A==M");
+
+    // A > M: N=0, Z=0, C=1
+    let (n, z, c) = run_cmp_imm_16(0x8000, 0x1000);
+    assert!(!n, "n: A>M");
+    assert!(!z, "z: A>M");
+    assert!(c, "c: A>M");
+}
