@@ -705,3 +705,94 @@ fn ror_direct_8bit() {
     assert!(!cpu.flags.zero, "z");
     assert!(cpu.flags.negative, "n");
 }
+
+#[test]
+fn lsr_accumulator_8bit() {
+    // 0x80 >> 1 = 0x40, carry=0, N always cleared
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0xA9, 0x80, 0x4A]); // LDA #$80; LSR A
+    for _ in 0..7 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!((cpu.a & 0xff) as u8, 0x40, "a");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(!cpu.flags.negative, "n");
+
+    // 0x01 >> 1 = 0x00, carry=1, zero=1
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0xA9, 0x01, 0x4A]); // LDA #$01; LSR A
+    for _ in 0..7 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!((cpu.a & 0xff) as u8, 0x00, "a carry-out");
+    assert!(cpu.flags.carry, "c carry-out");
+    assert!(cpu.flags.zero, "z carry-out");
+    assert!(!cpu.flags.negative, "n always clear");
+}
+
+#[test]
+fn tsb_direct_8bit() {
+    // M=0x0F, A=0xF0 -> M|=A => 0xFF; Z=1 (no overlap: A & M == 0)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0x0F;
+    sys.write_code(0x008000, &[0xA9, 0xF0, 0x04, 0x10]); // LDA #$F0; TSB $10
+    // 7 reset + 2 (LDA imm) + 5 (TSB dp)
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x0010], 0xFF, "mem after tsb");
+    assert!(cpu.flags.zero, "z (no overlap)");
+
+    // M=0xFF, A=0x0F -> M|=A => 0xFF; Z=0 (overlap exists)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0xFF;
+    sys.write_code(0x008000, &[0xA9, 0x0F, 0x04, 0x10]); // LDA #$0F; TSB $10
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x0010], 0xFF, "mem after tsb overlap");
+    assert!(!cpu.flags.zero, "z (overlap)");
+}
+
+#[test]
+fn trb_direct_8bit() {
+    // M=0xFF, A=0x0F -> M&=~A => 0xF0; Z=0 (overlap exists)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0xFF;
+    sys.write_code(0x008000, &[0xA9, 0x0F, 0x14, 0x10]); // LDA #$0F; TRB $10
+    // 7 reset + 2 (LDA imm) + 5 (TRB dp)
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x0010], 0xF0, "mem after trb");
+    assert!(!cpu.flags.zero, "z (overlap)");
+
+    // M=0x0F, A=0xF0 -> M&=~A => 0x0F; Z=1 (no overlap)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0x0F;
+    sys.write_code(0x008000, &[0xA9, 0xF0, 0x14, 0x10]); // LDA #$F0; TRB $10
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x0010], 0x0F, "mem after trb no-overlap");
+    assert!(cpu.flags.zero, "z (no overlap)");
+}

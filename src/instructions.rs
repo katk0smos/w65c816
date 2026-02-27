@@ -889,6 +889,62 @@ fn asl(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     }
 }
 
+fn lsr(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let b16 = cpu.a16();
+    let res = am.rwb(cpu, sys, |cpu, v, b16| if b16 {
+        cpu.flags.carry = v & 1 != 0;
+        let v = v >> 1;
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = false;
+        v
+    } else {
+        let v = v as u8;
+        cpu.flags.carry = v & 1 != 0;
+        let v = v >> 1;
+        cpu.flags.zero = v == 0;
+        cpu.flags.negative = false;
+        v as u16
+    }, b16);
+
+    if let Some(TaggedByte::Data(Byte::Low(_))) = res {
+        cpu.state = State::Fetch;
+    }
+}
+
+fn tsb(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let b16 = cpu.a16();
+    let res = am.rwb(cpu, sys, |cpu, v, b16| if b16 {
+        cpu.flags.zero = (cpu.a & v) == 0;
+        v | cpu.a
+    } else {
+        let a = ByteRef::Low(&mut cpu.a).get();
+        let v = v as u8;
+        cpu.flags.zero = (a & v) == 0;
+        (v | a) as u16
+    }, b16);
+
+    if let Some(TaggedByte::Data(Byte::Low(_))) = res {
+        cpu.state = State::Fetch;
+    }
+}
+
+fn trb(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let b16 = cpu.a16();
+    let res = am.rwb(cpu, sys, |cpu, v, b16| if b16 {
+        cpu.flags.zero = (cpu.a & v) == 0;
+        v & !cpu.a
+    } else {
+        let a = ByteRef::Low(&mut cpu.a).get();
+        let v = v as u8;
+        cpu.flags.zero = (a & v) == 0;
+        (v & !a) as u16
+    }, b16);
+
+    if let Some(TaggedByte::Data(Byte::Low(_))) = res {
+        cpu.state = State::Fetch;
+    }
+}
+
 fn rol(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     let b16 = cpu.a16();
     let res = am.rwb(cpu, sys, |cpu, mut v, b16| if b16 {
@@ -1068,7 +1124,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ora, AddressingMode::DirectIndirectX), // 01
     (brk_cop, AddressingMode::Implied), // 02 (same as brk, this is COP)
     (ora, AddressingMode::StackRel), // 03
-    (todo, AddressingMode::Implied), // 04
+    (tsb, AddressingMode::Direct), // 04
     (ora, AddressingMode::Direct), // 05
     (asl, AddressingMode::Direct), // 06
     (ora, AddressingMode::DirectIndirectLong), // 07
@@ -1076,7 +1132,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ora, AddressingMode::Immediate), // 09
     (asl, AddressingMode::Accumulator), // 0a
     (phd, AddressingMode::Implied), // 0b
-    (todo, AddressingMode::Implied), // 0c
+    (tsb, AddressingMode::Absolute), // 0c
     (ora, AddressingMode::Absolute), // 0d
     (asl, AddressingMode::Absolute), // 0e
     (ora, AddressingMode::AbsoluteLong), // 0f
@@ -1084,7 +1140,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ora, AddressingMode::DirectIndirectIndexedY), // 11
     (ora, AddressingMode::DirectIndirect), // 12
     (ora, AddressingMode::StackRelIndirectIndexedY), // 13
-    (todo, AddressingMode::Implied), // 14
+    (trb, AddressingMode::Direct), // 14
     (ora, AddressingMode::DirectIndexedX), // 15
     (asl, AddressingMode::DirectIndexedX), // 16
     (ora, AddressingMode::DirectIndirectLongIndexedY), // 17
@@ -1092,7 +1148,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (ora, AddressingMode::AbsoluteIndexedY), // 19
     (inc, AddressingMode::Accumulator), // 1a
     (tcs, AddressingMode::Implied), // 1b
-    (todo, AddressingMode::Implied), // 1c
+    (trb, AddressingMode::Absolute), // 1c
     (ora, AddressingMode::AbsoluteIndexedX), // 1d
     (asl, AddressingMode::AbsoluteIndexedX), // 1e
     (ora, AddressingMode::AbsoluteLongIndexedX), // 1f
@@ -1124,7 +1180,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (and, AddressingMode::AbsoluteIndexedY), // 39
     (dec, AddressingMode::Accumulator), // 3a
     (tsc, AddressingMode::Implied), // 3b
-    (todo, AddressingMode::Implied), // 3c
+    (bit, AddressingMode::AbsoluteIndexedX), // 3c
     (and, AddressingMode::AbsoluteIndexedX), // 3d
     (rol, AddressingMode::AbsoluteIndexedX), // 3e
     (and, AddressingMode::AbsoluteLongIndexedX), // 3f
@@ -1134,15 +1190,15 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::StackRel), // 43
     (todo, AddressingMode::Implied), // 44
     (eor, AddressingMode::Direct), // 45
-    (todo, AddressingMode::Implied), // 46
+    (lsr, AddressingMode::Direct), // 46
     (eor, AddressingMode::DirectIndirectLong), // 47
     (pha, AddressingMode::Implied), // 48
     (eor, AddressingMode::Immediate), // 49
-    (todo, AddressingMode::Implied), // 4a
+    (lsr, AddressingMode::Accumulator), // 4a
     (phk, AddressingMode::Implied), // 4b
     (jmp, AddressingMode::Immediate), // 4c
     (eor, AddressingMode::Absolute), // 4d
-    (todo, AddressingMode::Implied), // 4e
+    (lsr, AddressingMode::Absolute), // 4e
     (eor, AddressingMode::AbsoluteLong), // 4f
     (bvc, AddressingMode::Immediate), // 50
     (eor, AddressingMode::DirectIndirectIndexedY), // 51
@@ -1150,7 +1206,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::StackRelIndirectIndexedY), // 53
     (todo, AddressingMode::Implied), // 54
     (eor, AddressingMode::DirectIndexedX), // 55
-    (todo, AddressingMode::Implied), // 56
+    (lsr, AddressingMode::DirectIndexedX), // 56
     (eor, AddressingMode::DirectIndirectLongIndexedY), // 57
     (cli, AddressingMode::Implied), // 58
     (eor, AddressingMode::AbsoluteIndexedY), // 59
@@ -1158,7 +1214,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (tcd, AddressingMode::Implied), // 5b
     (jml, AddressingMode::AbsoluteLong), // 5c
     (eor, AddressingMode::AbsoluteIndexedX), // 5d
-    (todo, AddressingMode::Implied), // 5e
+    (lsr, AddressingMode::AbsoluteIndexedX), // 5e
     (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
     (rts, AddressingMode::Absolute), // 60
     (adc, AddressingMode::DirectIndirectX), // 61
