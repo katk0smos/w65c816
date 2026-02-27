@@ -499,6 +499,29 @@ transfer16!(tcs, cpu, cpu.a, cpu.s);
 transfer16!(tdc, cpu, cpu.d, cpu.a);
 transfer16!(tsc, cpu, cpu.s, cpu.a);
 
+macro_rules! inc_index {
+    ($name:ident, $reg:ident, $op:ident) => {
+        fn $name(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            implied(cpu, sys);
+            if cpu.m8() {
+                let v = ByteRef::Low(&mut cpu.$reg).get().$op(1);
+                ByteRef::Low(&mut cpu.$reg).set(v);
+                cpu.flags.zero = v == 0;
+                cpu.flags.negative = v >> 7 != 0;
+            } else {
+                cpu.$reg = cpu.$reg.$op(1);
+                cpu.flags.zero = cpu.$reg == 0;
+                cpu.flags.negative = cpu.$reg >> 15 != 0;
+            }
+        }
+    }
+}
+
+inc_index!(dey, y, wrapping_sub);
+inc_index!(iny, y, wrapping_add);
+inc_index!(dex, x, wrapping_sub);
+inc_index!(inx, x, wrapping_add);
+
 fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
@@ -1069,7 +1092,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sta, AddressingMode::Direct), // 85
     (stx, AddressingMode::Direct), // 86
     (sta, AddressingMode::DirectIndirectLong), // 87
-    (todo, AddressingMode::Implied), // 88
+    (dey, AddressingMode::Implied), // 88
     (bit, AddressingMode::Immediate), // 89
     (txa, AddressingMode::Implied), // 8a
     (phb, AddressingMode::Implied), // 8b
@@ -1133,9 +1156,9 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (todo, AddressingMode::Implied), // c5
     (dec, AddressingMode::Direct), // c6
     (todo, AddressingMode::Implied), // c7
-    (todo, AddressingMode::Implied), // c8
+    (iny, AddressingMode::Implied), // c8
     (todo, AddressingMode::Implied), // c9
-    (todo, AddressingMode::Implied), // ca
+    (dex, AddressingMode::Implied), // ca
     (wai, AddressingMode::Implied), // cb
     (todo, AddressingMode::Implied), // cc
     (todo, AddressingMode::Implied), // cd
@@ -1165,7 +1188,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (sbc, AddressingMode::Direct), // e5
     (inc, AddressingMode::Direct), // e6
     (sbc, AddressingMode::DirectIndirectLong), // e7
-    (todo, AddressingMode::Implied), // e8
+    (inx, AddressingMode::Implied), // e8
     (sbc, AddressingMode::Immediate), // e9
     (nop, AddressingMode::Implied), // ea
     (todo, AddressingMode::Implied), // eb
