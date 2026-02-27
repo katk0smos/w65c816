@@ -498,3 +498,210 @@ fn cmp_immediate_16bit() {
     assert!(!z, "z: A>M");
     assert!(c, "c: A>M");
 }
+
+// Returns (result_a_low, carry, zero, negative) after ROL accumulator (8-bit)
+fn run_rol_acc_8(a: u8, carry_in: bool) -> (u8, bool, bool, bool) {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    let mut code = vec![0xA9u8, a]; // LDA #a
+    if carry_in {
+        code.push(0x38); // SEC
+    } else {
+        code.push(0x18); // CLC
+    }
+    code.push(0x2A); // ROL A
+    sys.write_code(0x008000, &code);
+    // 7 reset + 2 (LDA) + 2 (SEC/CLC) + 2 (ROL A)
+    for _ in 0..7 + 2 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    (
+        (cpu.a & 0xff) as u8,
+        cpu.flags.carry,
+        cpu.flags.zero,
+        cpu.flags.negative,
+    )
+}
+
+// Returns (result_a_low, carry, zero, negative) after ROR accumulator (8-bit)
+fn run_ror_acc_8(a: u8, carry_in: bool) -> (u8, bool, bool, bool) {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    let mut code = vec![0xA9u8, a]; // LDA #a
+    if carry_in {
+        code.push(0x38); // SEC
+    } else {
+        code.push(0x18); // CLC
+    }
+    code.push(0x6A); // ROR A
+    sys.write_code(0x008000, &code);
+    for _ in 0..7 + 2 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    (
+        (cpu.a & 0xff) as u8,
+        cpu.flags.carry,
+        cpu.flags.zero,
+        cpu.flags.negative,
+    )
+}
+
+#[test]
+fn rol_accumulator_8bit() {
+    // Basic rotate: 0x02 << 1 = 0x04, carry_in=0 -> carry_out=0
+    let (a, c, z, n) = run_rol_acc_8(0x02, false);
+    assert_eq!(a, 0x04, "a");
+    assert!(!c, "c");
+    assert!(!z, "z");
+    assert!(!n, "n");
+
+    // Carry-in feeds bit 0: 0x02, carry_in=1 -> 0x05
+    let (a, c, z, n) = run_rol_acc_8(0x02, true);
+    assert_eq!(a, 0x05, "a carry-in");
+    assert!(!c, "c carry-in");
+    assert!(!z, "z carry-in");
+    assert!(!n, "n carry-in");
+
+    // Carry-out from bit 7: 0x80, carry_in=0 -> result=0, carry=1, zero=1
+    let (a, c, z, n) = run_rol_acc_8(0x80, false);
+    assert_eq!(a, 0x00, "a carry-out");
+    assert!(c, "c carry-out");
+    assert!(z, "z carry-out");
+    assert!(!n, "n carry-out");
+
+    // Negative flag: 0x40, carry_in=0 -> 0x80, N=1
+    let (a, c, z, n) = run_rol_acc_8(0x40, false);
+    assert_eq!(a, 0x80, "a negative");
+    assert!(!c, "c negative");
+    assert!(!z, "z negative");
+    assert!(n, "n negative");
+}
+
+#[test]
+fn ror_accumulator_8bit() {
+    // Basic rotate: 0x08 >> 1 = 0x04, carry_in=0 -> carry_out=0
+    let (a, c, z, n) = run_ror_acc_8(0x08, false);
+    assert_eq!(a, 0x04, "a");
+    assert!(!c, "c");
+    assert!(!z, "z");
+    assert!(!n, "n");
+
+    // Carry-in feeds bit 7: 0x02, carry_in=1 -> 0x81
+    let (a, c, z, n) = run_ror_acc_8(0x02, true);
+    assert_eq!(a, 0x81, "a carry-in");
+    assert!(!c, "c carry-in");
+    assert!(!z, "z carry-in");
+    assert!(n, "n carry-in");
+
+    // Carry-out from bit 0: 0x01, carry_in=0 -> result=0, carry=1, zero=1
+    let (a, c, z, n) = run_ror_acc_8(0x01, false);
+    assert_eq!(a, 0x00, "a carry-out");
+    assert!(c, "c carry-out");
+    assert!(z, "z carry-out");
+    assert!(!n, "n carry-out");
+
+    // Negative via carry-in: 0x00, carry_in=1 -> 0x80
+    let (a, c, z, n) = run_ror_acc_8(0x00, true);
+    assert_eq!(a, 0x80, "a negative");
+    assert!(!c, "c negative");
+    assert!(!z, "z negative");
+    assert!(n, "n negative");
+}
+
+#[test]
+fn rol_accumulator_16bit() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // CLC; XCE; REP #$20; LDA #$4000; SEC; ROL A
+    sys.write_code(
+        0x008000,
+        &[
+            0x18,       // CLC
+            0xFB,       // XCE  (native mode)
+            0xC2, 0x20, // REP #$20  (16-bit accumulator)
+            0xA9, 0x00, 0x40, // LDA #$4000
+            0x38,       // SEC
+            0x2A,       // ROL A
+        ],
+    );
+    // 7 reset + 2+2+3+3+2+2
+    for _ in 0..7 + 2 + 2 + 3 + 3 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.a, 0x8001, "a 16-bit rol");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(cpu.flags.negative, "n");
+}
+
+#[test]
+fn ror_accumulator_16bit() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // CLC; XCE; REP #$20; LDA #$0002; CLC; ROR A
+    sys.write_code(
+        0x008000,
+        &[
+            0x18,       // CLC
+            0xFB,       // XCE
+            0xC2, 0x20, // REP #$20
+            0xA9, 0x02, 0x00, // LDA #$0002
+            0x18,       // CLC
+            0x6A,       // ROR A
+        ],
+    );
+    for _ in 0..7 + 2 + 2 + 3 + 3 + 2 + 2 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.a, 0x0001, "a 16-bit ror");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(!cpu.flags.negative, "n");
+}
+
+#[test]
+fn rol_direct_8bit() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0x42;
+    // CLC; ROL $10
+    sys.write_code(0x008000, &[0x18, 0x26, 0x10]);
+    // 7 reset + 2 (CLC) + 5 (ROL dp)
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(sys.ram[0x0010], 0x84, "mem after rol direct");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(cpu.flags.negative, "n");
+}
+
+#[test]
+fn ror_direct_8bit() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x0010] = 0x42;
+    // SEC; ROR $10
+    sys.write_code(0x008000, &[0x38, 0x66, 0x10]);
+    // 7 reset + 2 (SEC) + 5 (ROR dp)
+    for _ in 0..7 + 2 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    // 0x42 = 0b01000010, carry_in=1 -> 0b10100001 = 0xA1, carry_out=0
+    assert_eq!(sys.ram[0x0010], 0xA1, "mem after ror direct");
+    assert!(!cpu.flags.carry, "c");
+    assert!(!cpu.flags.zero, "z");
+    assert!(cpu.flags.negative, "n");
+}

@@ -716,6 +716,211 @@ impl AddressingMode {
                 sys.write(effective, data, AddressType::Data, &cpu.signals);
                 Some(TaggedByte::Data(Byte::Low(data)))
             }
+            // Direct R-M-W (§10b): 5 cycles base +1 DL≠0 +2 16-bit
+            (AddressingMode::Direct, _, _) => {
+                let dl0 = ByteRef::Low(&mut cpu.d).get() == 0;
+                match (cpu.tcu, dl0, b16) {
+                    (1, _, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let offset = sys.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::Low(&mut cpu.temp_addr).set(offset);
+                        Some(TaggedByte::Address(Byte::Low(offset)))
+                    }
+                    (2, false, _) => {
+                        // DL≠0 penalty IO at previous PC
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                        sys.read(effective, AddressType::Invalid, &cpu.signals);
+                        None
+                    }
+                    // Read data low: tcu=2 for DL=0, tcu=3 for DL≠0
+                    (2, true, _) | (3, false, _) => {
+                        let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp_addr).get() as u16) as u32;
+                        let value = sys.read(addr, AddressType::Data, &cpu.signals);
+                        ByteRef::Low(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    // Read data high (16-bit): tcu=3 for DL=0, tcu=4 for DL≠0
+                    (3, true, true) | (4, false, true) => {
+                        let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1) as u32;
+                        let value = sys.read(addr, AddressType::Data, &cpu.signals);
+                        ByteRef::High(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    // IO + apply: 8-bit tcu=3(DL=0)/4(DL≠0); 16-bit tcu=4(DL=0)/5(DL≠0)
+                    (3, true, false) | (4, false, false) | (4, true, true) | (5, false, true) => {
+                        let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp_addr).get() as u16) as u32;
+                        if cpu.flags.emulation {
+                            let data = ByteRef::High(&mut cpu.temp_data).get();
+                            sys.write(addr.wrapping_add(1), data, AddressType::Invalid, &cpu.signals);
+                        } else {
+                            let _ = sys.read(addr.wrapping_add(1), AddressType::Invalid, &cpu.signals);
+                        }
+                        let data = f(cpu, cpu.temp_data, b16);
+                        if !cpu.aborted {
+                            cpu.temp_data = data;
+                        }
+                        None
+                    }
+                    // Write high byte (16-bit): tcu=5(DL=0)/6(DL≠0)
+                    (5, true, true) | (6, false, true) => {
+                        let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1) as u32;
+                        let data = ByteRef::High(&mut cpu.temp_data).get();
+                        sys.write(addr, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::High(data)))
+                    }
+                    // Write low byte (final): 8-bit tcu=4(DL=0)/5(DL≠0); 16-bit tcu=6(DL=0)/7(DL≠0)
+                    (4, true, false) | (5, false, false) | (6, true, true) | (7, false, true) => {
+                        let addr = cpu.d.wrapping_add(ByteRef::Low(&mut cpu.temp_addr).get() as u16) as u32;
+                        let data = ByteRef::Low(&mut cpu.temp_data).get();
+                        sys.write(addr, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::Low(data)))
+                    }
+                    _ => None,
+                }
+            }
+            // Direct Indexed with X R-M-W (§16b): 6 cycles base +1 DL≠0 +2 16-bit
+            (AddressingMode::DirectIndexedX, _, _) => {
+                let dl0 = ByteRef::Low(&mut cpu.d).get() == 0;
+                match (cpu.tcu, dl0, b16) {
+                    (1, _, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let offset = sys.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::Low(&mut cpu.temp_addr).set(offset);
+                        Some(TaggedByte::Address(Byte::Low(offset)))
+                    }
+                    (2, false, _) => {
+                        // DL≠0 penalty IO
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                        sys.read(effective, AddressType::Invalid, &cpu.signals);
+                        None
+                    }
+                    // X-addition IO (mandatory): tcu=2(DL=0)/3(DL≠0)
+                    (2, true, _) | (3, false, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                        sys.read(effective, AddressType::Invalid, &cpu.signals);
+                        None
+                    }
+                    // Read data low: tcu=3(DL=0)/4(DL≠0)
+                    (3, true, _) | (4, false, _) => {
+                        let offset = ByteRef::Low(&mut cpu.temp_addr).get();
+                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        let value = sys.read(addr, AddressType::Data, &cpu.signals);
+                        ByteRef::Low(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    // Read data high (16-bit): tcu=4(DL=0)/5(DL≠0)
+                    (4, true, true) | (5, false, true) => {
+                        let offset = ByteRef::Low(&mut cpu.temp_addr).get();
+                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x).wrapping_add(1) as u32;
+                        let value = sys.read(addr, AddressType::Data, &cpu.signals);
+                        ByteRef::High(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    // IO + apply: 8-bit tcu=4(DL=0)/5(DL≠0); 16-bit tcu=5(DL=0)/6(DL≠0)
+                    (4, true, false) | (5, false, false) | (5, true, true) | (6, false, true) => {
+                        let offset = ByteRef::Low(&mut cpu.temp_addr).get();
+                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        if cpu.flags.emulation {
+                            let data = ByteRef::High(&mut cpu.temp_data).get();
+                            sys.write(addr.wrapping_add(1), data, AddressType::Invalid, &cpu.signals);
+                        } else {
+                            let _ = sys.read(addr.wrapping_add(1), AddressType::Invalid, &cpu.signals);
+                        }
+                        let data = f(cpu, cpu.temp_data, b16);
+                        if !cpu.aborted {
+                            cpu.temp_data = data;
+                        }
+                        None
+                    }
+                    // Write high byte (16-bit): tcu=6(DL=0)/7(DL≠0)
+                    (6, true, true) | (7, false, true) => {
+                        let offset = ByteRef::Low(&mut cpu.temp_addr).get();
+                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x).wrapping_add(1) as u32;
+                        let data = ByteRef::High(&mut cpu.temp_data).get();
+                        sys.write(addr, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::High(data)))
+                    }
+                    // Write low byte (final): 8-bit tcu=5(DL=0)/6(DL≠0); 16-bit tcu=7(DL=0)/8(DL≠0)
+                    (5, true, false) | (6, false, false) | (7, true, true) | (8, false, true) => {
+                        let offset = ByteRef::Low(&mut cpu.temp_addr).get();
+                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        let data = ByteRef::Low(&mut cpu.temp_data).get();
+                        sys.write(addr, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::Low(data)))
+                    }
+                    _ => None,
+                }
+            }
+            // Absolute Indexed with X R-M-W (§6b): 7 cycles base +2 16-bit (IO always present)
+            (AddressingMode::AbsoluteIndexedX, _, _) => {
+                match (cpu.tcu, b16) {
+                    (1, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::Low(&mut cpu.temp_addr).set(data);
+                        None
+                    }
+                    (2, _) => {
+                        let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                        let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                        cpu.pc = cpu.pc.wrapping_add(1);
+                        ByteRef::High(&mut cpu.temp_addr).set(data);
+                        None
+                    }
+                    (3, _) => {
+                        // Mandatory IO for X-add (always present for RMW)
+                        let xl = ByteRef::Low(&mut cpu.x).get();
+                        let al = cpu.temp_addr as u8;
+                        let preliminary = (cpu.temp_addr & 0xff00) | (al.wrapping_add(xl) as u16);
+                        let effective = ((cpu.dbr as u32) << 16) | (preliminary as u32);
+                        let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+                        None
+                    }
+                    (4, _) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x) as u32);
+                        let value = sys.read(effective, AddressType::Data, &cpu.signals);
+                        ByteRef::Low(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    (5, true) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1) as u32);
+                        let value = sys.read(effective, AddressType::Data, &cpu.signals);
+                        ByteRef::High(&mut cpu.temp_data).set(value);
+                        None
+                    }
+                    (5, false) | (6, true) => {
+                        // IO + apply
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1) as u32);
+                        if cpu.flags.emulation {
+                            let data = ByteRef::High(&mut cpu.temp_data).get();
+                            sys.write(effective, data, AddressType::Invalid, &cpu.signals);
+                        } else {
+                            let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+                        }
+                        let data = f(cpu, cpu.temp_data, b16);
+                        if !cpu.aborted {
+                            cpu.temp_data = data;
+                        }
+                        None
+                    }
+                    (7, true) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1) as u32);
+                        let data = ByteRef::High(&mut cpu.temp_data).get();
+                        sys.write(effective, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::High(data)))
+                    }
+                    (6, false) | (8, true) => {
+                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x) as u32);
+                        let data = ByteRef::Low(&mut cpu.temp_data).get();
+                        sys.write(effective, data, AddressType::Data, &cpu.signals);
+                        Some(TaggedByte::Data(Byte::Low(data)))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
