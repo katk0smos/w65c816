@@ -46,6 +46,46 @@ fn nop(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     implied(cpu, sys);
 }
 
+fn xba(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 => { io(cpu, sys); }
+        2 => {
+            io(cpu, sys);
+            let lo = ByteRef::Low(&mut cpu.a).get();
+            let hi = ByteRef::High(&mut cpu.a).get();
+            ByteRef::Low(&mut cpu.a).set(hi);
+            ByteRef::High(&mut cpu.a).set(lo);
+            cpu.flags.zero = hi == 0;
+            cpu.flags.negative = hi >> 7 != 0;
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn brl(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(effective, AddressType::Program, &cpu.signals);
+            ByteRef::Low(&mut cpu.temp_addr).set(data);
+            cpu.pc = cpu.pc.wrapping_add(1);
+        }
+        2 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let data = sys.read(effective, AddressType::Program, &cpu.signals);
+            ByteRef::High(&mut cpu.temp_addr).set(data);
+        }
+        3 => {
+            let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+            let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1).wrapping_add_signed(cpu.temp_addr as i16);
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn wdm(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
     let _ = sys.read(effective, AddressType::Program, &cpu.signals);
@@ -330,11 +370,37 @@ fn jml(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 }
 
 fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
-    match am {
-        AddressingMode::IndirectLong => {
-            todo!("jmp [abs]")
+    if let AddressingMode::IndirectLong = am {
+        match cpu.tcu {
+            1 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            2 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            3 => {
+                let data = sys.read(cpu.temp_addr as u32, AddressType::Data, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_data).set(data);
+            }
+            4 => {
+                let data = sys.read(cpu.temp_addr as u32 + 1, AddressType::Data, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_data).set(data);
+            }
+            5 => {
+                let data = sys.read(cpu.temp_addr as u32 + 2, AddressType::Data, &cpu.signals);
+                cpu.pc = cpu.temp_data;
+                cpu.pbr = data;
+                cpu.state = State::Fetch;
+            }
+            _ => unreachable!(),
         }
-        _ => (),
+        return;
     }
 
     match am.read(cpu, sys) {
@@ -1081,7 +1147,7 @@ fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         3 => {
             let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
-            cpu.temp_addr = cpu.temp_addr.wrapping_add(cpu.pc);
+            cpu.temp_addr = cpu.pc.wrapping_add(1).wrapping_add_signed(cpu.temp_addr as i16);
         }
         4 => {
             let data = ByteRef::High(&mut cpu.temp_addr).get();
@@ -1218,7 +1284,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (eor, AddressingMode::AbsoluteLongIndexedX), // 5f
     (rts, AddressingMode::Absolute), // 60
     (adc, AddressingMode::DirectIndirectX), // 61
-    (todo, AddressingMode::Implied), // 62
+    (per, AddressingMode::Implied), // 62
     (adc, AddressingMode::StackRel), // 63
     (stz, AddressingMode::Direct), // 64
     (adc, AddressingMode::Direct), // 65
@@ -1250,7 +1316,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (adc, AddressingMode::AbsoluteLongIndexedX), // 7f
     (bra, AddressingMode::Immediate), // 80
     (sta, AddressingMode::DirectIndirectX), // 81
-    (todo, AddressingMode::Implied), // 82
+    (brl, AddressingMode::Implied), // 82
     (sta, AddressingMode::StackRel), // 83
     (sty, AddressingMode::Direct), // 84
     (sta, AddressingMode::Direct), // 85
@@ -1355,7 +1421,7 @@ pub const INSTRUCTIONS: [(InstructionFn, AddressingMode); 0x100] = [
     (inx, AddressingMode::Implied), // e8
     (sbc, AddressingMode::Immediate), // e9
     (nop, AddressingMode::Implied), // ea
-    (todo, AddressingMode::Implied), // eb
+    (xba, AddressingMode::Implied), // eb
     (cpx, AddressingMode::Absolute), // ec
     (sbc, AddressingMode::Absolute), // ed
     (inc, AddressingMode::Absolute), // ee

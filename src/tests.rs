@@ -768,6 +768,130 @@ fn tsb_direct_8bit() {
 }
 
 #[test]
+fn xba_test() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    // LDA #$BB (high byte via XCE/REP later) — use XBA directly by setting cpu.a
+    // Place: LDA #$AA (imm 8-bit in emulation mode), then set B manually, then XBA
+    // Simpler: just set cpu.a after reset and run XBA opcode
+    sys.write_code(0x008000, &[0xEB]); // XBA
+    for _ in 0..7 {
+        cpu.cycle(&mut sys); // reset sequence
+    }
+    cpu.a = 0xBBAA;
+    // 3 cycles: fetch(0xEB) + 2 IO
+    for _ in 0..3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.a, 0xAABB, "a after xba");
+    assert!(cpu.flags.negative, "n flag (0xAA bit7=1)");
+    assert!(!cpu.flags.zero, "z flag");
+}
+
+#[test]
+fn xba_zero_flag() {
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0xEB]); // XBA
+    for _ in 0..7 {
+        cpu.cycle(&mut sys);
+    }
+    cpu.a = 0x00AA; // B=0x00, A=0xAA -> after XBA: A=0x00, B=0xAA, N=0, Z=1
+    for _ in 0..3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.a, 0xAA00, "a after xba zero");
+    assert!(cpu.flags.zero, "z flag set when new A=0");
+    assert!(!cpu.flags.negative, "n flag clear");
+}
+
+#[test]
+fn brl_zero_offset() {
+    // BRL $0000 at 0x8000: PC should become 0x8003 (3-byte instruction + 0 offset)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0x82, 0x00, 0x00]); // BRL $0000
+    // 7 reset + 1 fetch + 3 brl cycles
+    for _ in 0..7 + 1 + 3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.pc, 0x8003, "pc after brl +0");
+    assert_eq!(cpu.pbr, 0x00, "pbr unchanged");
+}
+
+#[test]
+fn brl_forward_offset() {
+    // BRL $0010 at 0x8000: PC = 0x8003 + 0x0010 = 0x8013
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0x82, 0x10, 0x00]); // BRL +16
+    for _ in 0..7 + 1 + 3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.pc, 0x8013, "pc after brl +16");
+}
+
+#[test]
+fn brl_backward_offset() {
+    // BRL $FFFD (-3) at 0x8000: PC = 0x8003 + (-3) = 0x8000
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0x82, 0xFD, 0xFF]); // BRL -3 (loops back to itself)
+    for _ in 0..7 + 1 + 3 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.pc, 0x8000, "pc after brl -3");
+}
+
+#[test]
+fn jml_indirect_long() {
+    // JML [$2000]: pointer at 0x2000 = [0x34, 0x12, 0x05] -> PC=0x1234, PBR=0x05
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.ram[0x002000] = 0x34;
+    sys.ram[0x002001] = 0x12;
+    sys.ram[0x002002] = 0x05;
+    sys.write_code(0x008000, &[0xDC, 0x00, 0x20]); // JML [$2000]
+    // 7 reset + 1 fetch + 5 jml cycles
+    for _ in 0..7 + 1 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    assert_eq!(cpu.pc, 0x1234, "pc after jml");
+    assert_eq!(cpu.pbr, 0x05, "pbr after jml");
+}
+
+#[test]
+fn per_zero_offset() {
+    // PER $0000 at 0x8000: pushes 0x8003 (PC+3+0)
+    let mut cpu = CPU::new();
+    let mut sys = Sys::default();
+    sys.ram[0xfffc] = 0x00;
+    sys.ram[0xfffd] = 0x80;
+    sys.write_code(0x008000, &[0x62, 0x00, 0x00]); // PER $0000
+    // 7 reset + 1 fetch + 5 per cycles
+    for _ in 0..7 + 1 + 5 {
+        cpu.cycle(&mut sys);
+    }
+    let s = cpu.s;
+    let lo = sys.ram[s as usize + 1] as u16;
+    let hi = sys.ram[s as usize + 2] as u16;
+    let pushed = (hi << 8) | lo;
+    assert_eq!(pushed, 0x8003, "per pushed value");
+}
+
+#[test]
 fn trb_direct_8bit() {
     // M=0xFF, A=0x0F -> M&=~A => 0xF0; Z=0 (overlap exists)
     let mut cpu = CPU::new();
