@@ -2163,7 +2163,6 @@ impl CPU {
                     ));
 
                     cpu.pbr = 0;
-                    cpu.dbr = 0;
                     cpu.state = State::Fetch;
                 }
                 _ => unreachable!(),
@@ -2505,7 +2504,7 @@ impl CPU {
     pub fn set_y(&mut self, mut y: u16) {
         if self.m8() {
             ByteRef::Low(&mut self.y).set(ByteRef::Low(&mut y).get());
-            ByteRef::High(&mut self.x).set(0);
+            ByteRef::High(&mut self.y).set(0);
         } else {
             self.y = y;
         }

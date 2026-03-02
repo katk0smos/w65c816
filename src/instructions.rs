@@ -1035,11 +1035,14 @@ macro_rules! push {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             let mut r: u16 = $r;
             match $cpu.tcu {
-                1 if $b16 => {
+                1 => {
+                    io($cpu, sys);
+                }
+                2 if $b16 => {
                     let b = ByteRef::High(&mut r).get();
                     $cpu.stack_push(sys, b, false);
                 }
-                1 | 2 => {
+                2 | 3 => {
                     let b = ByteRef::Low(&mut r).get();
                     $cpu.stack_push(sys, b, false);
                     $cpu.state = State::Fetch;
@@ -1054,7 +1057,10 @@ macro_rules! pull8 {
     ($name:ident, $cpu:ident, $v:ident, $set:stmt) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             match $cpu.tcu {
-                1 => {
+                1 | 2 => {
+                    io($cpu, sys);
+                }
+                3 => {
                     let $v = $cpu.stack_pop(sys);
                     $set
                     $cpu.state = State::Fetch;
@@ -1069,14 +1075,17 @@ macro_rules! pull16 {
     ($name:ident, $cpu:ident, $r:expr, $b16:expr) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             match $cpu.tcu {
-                1 => {
+                1 | 2 => {
+                    io($cpu, sys);
+                }
+                3 => {
                     let b = $cpu.stack_pop(sys);
                     ByteRef::Low(&mut $r).set(b);
                     if !($b16) {
                         $cpu.state = State::Fetch;
                     }
                 }
-                2 => {
+                4 => {
                     let b = $cpu.stack_pop(sys);
                     ByteRef::High(&mut $r).set(b);
                     $cpu.state = State::Fetch;
