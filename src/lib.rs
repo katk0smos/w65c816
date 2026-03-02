@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(feature = "nightly", feature(test))]
-#![cfg(feature = "nightly")]
+
+#[cfg(feature = "nightly")]
 extern crate test;
 
 #[cfg(test)]
