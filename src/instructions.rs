@@ -503,6 +503,74 @@ fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
         return;
     }
 
+    // JMP (a) — Absolute Indirect — 5 cycles
+    if let AddressingMode::Indirect = am {
+        match cpu.tcu {
+            1 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            2 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            3 => {
+                let data = sys.read(cpu.temp_addr as u32, AddressType::Data, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_data).set(data);
+            }
+            4 => {
+                let data = sys.read(cpu.temp_addr as u32 + 1, AddressType::Data, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_data).set(data);
+                cpu.pc = cpu.temp_data;
+                cpu.state = State::Fetch;
+            }
+            _ => unreachable!(),
+        }
+        return;
+    }
+
+    // JMP (a,x) — Absolute Indexed Indirect — 6 cycles
+    if let AddressingMode::IndexedIndirectX = am {
+        match cpu.tcu {
+            1 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            2 => {
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
+                let data = sys.read(effective, AddressType::Program, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_addr).set(data);
+                cpu.pc = cpu.pc.wrapping_add(1);
+            }
+            3 => {
+                // IO dummy cycle at PBR:PC-1 (last byte of instruction operand)
+                let effective = ((cpu.pbr as u32) << 16) | (cpu.pc.wrapping_sub(1) as u32);
+                let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
+            }
+            4 => {
+                let ptr = ((cpu.pbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.x) as u32);
+                let data = sys.read(ptr, AddressType::Program, &cpu.signals);
+                ByteRef::Low(&mut cpu.temp_data).set(data);
+            }
+            5 => {
+                let ptr = ((cpu.pbr as u32) << 16)
+                    | (cpu.temp_addr.wrapping_add(cpu.x).wrapping_add(1) as u32);
+                let data = sys.read(ptr, AddressType::Program, &cpu.signals);
+                ByteRef::High(&mut cpu.temp_data).set(data);
+                cpu.pc = cpu.temp_data;
+                cpu.state = State::Fetch;
+            }
+            _ => unreachable!(),
+        }
+        return;
+    }
+
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => cpu.temp_data = l as u16,
         Some(TaggedByte::Data(Byte::High(h))) => {
