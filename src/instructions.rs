@@ -1046,9 +1046,10 @@ macro_rules! branch {
                 }
                 2 => {
                     io($cpu, sys);
-                    let ba = $cpu.pc.wrapping_add_signed(($cpu.temp_addr as i8).into());
+                    let old_pc = $cpu.pc;
+                    let ba = old_pc.wrapping_add_signed(($cpu.temp_addr as i8).into());
                     $cpu.pc = ba;
-                    if !$cpu.flags.emulation || $cpu.pc & 0xff00 == ba & 0xff00 {
+                    if !$cpu.flags.emulation || old_pc & 0xff00 == ba & 0xff00 {
                         $cpu.state = State::Fetch;
                     }
                 }
