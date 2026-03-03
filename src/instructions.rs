@@ -746,8 +746,22 @@ macro_rules! transfer16 {
 
 transfer16!(tcd, cpu, cpu.a, cpu.d);
 transfer16!(tcs, cpu, cpu.a, cpu.s);
-transfer16!(tdc, cpu, cpu.d, cpu.a);
-transfer16!(tsc, cpu, cpu.s, cpu.a);
+
+fn tdc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    cpu.a = cpu.d;
+    cpu.flags.negative = cpu.a >> 15 != 0;
+    cpu.flags.zero = cpu.a == 0;
+    cpu.state = State::Fetch;
+}
+
+fn tsc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    cpu.a = cpu.s;
+    cpu.flags.negative = cpu.a >> 15 != 0;
+    cpu.flags.zero = cpu.a == 0;
+    cpu.state = State::Fetch;
+}
 
 macro_rules! inc_index {
     ($name:ident, $reg:ident, $op:ident) => {
@@ -1109,12 +1123,16 @@ macro_rules! pull16 {
                     let b = $cpu.stack_pop(sys);
                     ByteRef::Low(&mut $r).set(b);
                     if !($b16) {
+                        $cpu.flags.negative = b >> 7 != 0;
+                        $cpu.flags.zero = b == 0;
                         $cpu.state = State::Fetch;
                     }
                 }
                 4 => {
                     let b = $cpu.stack_pop(sys);
                     ByteRef::High(&mut $r).set(b);
+                    $cpu.flags.negative = $r >> 15 != 0;
+                    $cpu.flags.zero = $r == 0;
                     $cpu.state = State::Fetch;
                 }
                 _ => unreachable!(),
@@ -1131,7 +1149,7 @@ push!(php, cpu, cpu.flags.as_byte() as u16, false);
 push!(phx, cpu, cpu.x, cpu.m16());
 push!(phy, cpu, cpu.y, cpu.m16());
 pull16!(pla, cpu, cpu.a, cpu.a16());
-pull8!(plb, cpu, b, cpu.dbr = b);
+pull8!(plb, cpu, b, { cpu.dbr = b; cpu.flags.negative = b >> 7 != 0; cpu.flags.zero = b == 0; });
 pull16!(pld, cpu, cpu.d, true);
 pull8!(plp, cpu, p, cpu.set_p(p));
 pull16!(plx, cpu, cpu.x, cpu.m16());
@@ -1368,21 +1386,26 @@ fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
 }
 
 fn bit(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
+    let immediate = matches!(am, AddressingMode::Immediate);
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
             let a = ByteRef::Low(&mut cpu.a).get();
             cpu.flags.zero = l & a == 0;
             if cpu.a8() {
-                cpu.flags.negative = l >> 7 != 0;
-                cpu.flags.overflow = (l >> 6) & 1 != 0;
+                if !immediate {
+                    cpu.flags.negative = l >> 7 != 0;
+                    cpu.flags.overflow = (l >> 6) & 1 != 0;
+                }
                 cpu.state = State::Fetch;
             }
         }
         Some(TaggedByte::Data(Byte::High(h))) => {
             let a = ByteRef::High(&mut cpu.a).get();
             cpu.flags.zero = cpu.flags.zero && h & a == 0;
-            cpu.flags.negative = h >> 7 != 0;
-            cpu.flags.overflow = (h >> 6) & 1 != 0;
+            if !immediate {
+                cpu.flags.negative = h >> 7 != 0;
+                cpu.flags.overflow = (h >> 6) & 1 != 0;
+            }
             cpu.state = State::Fetch;
         }
         _ => (),

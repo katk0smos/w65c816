@@ -2463,6 +2463,9 @@ impl CPU {
 
         if !self.aborted {
             self.s = self.s.wrapping_sub(1);
+            if self.flags.emulation {
+                ByteRef::High(&mut self.s).set(0x01);
+            }
         }
     }
 
@@ -2470,6 +2473,9 @@ impl CPU {
     fn stack_pop(&mut self, system: &mut dyn System) -> u8 {
         if !self.aborted {
             self.s = self.s.wrapping_add(1);
+            if self.flags.emulation {
+                ByteRef::High(&mut self.s).set(0x01);
+            }
         }
 
         system.read(self.s as u32, AddressType::Data, &self.signals)
