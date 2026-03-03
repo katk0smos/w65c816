@@ -1858,7 +1858,11 @@ impl AddressingMode {
                     // Read data low: tcu=3(DL=0)/4(DL≠0)
                     (3, true, _) | (4, false, _) => {
                         let offset = ByteRef::Low(&mut cpu.temp_addr).get();
-                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        let addr = if cpu.flags.emulation && dl0 {
+                            ((cpu.d & 0xFF00) | ((offset as u16).wrapping_add(cpu.x) & 0xFF)) as u32
+                        } else {
+                            cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32
+                        };
                         let value = sys.read(addr, AddressType::Data, &cpu.signals);
                         ByteRef::Low(&mut cpu.temp_data).set(value);
                         None
@@ -1874,10 +1878,14 @@ impl AddressingMode {
                     // IO + apply: 8-bit tcu=4(DL=0)/5(DL≠0); 16-bit tcu=5(DL=0)/6(DL≠0)
                     (4, true, false) | (5, false, false) | (5, true, true) | (6, false, true) => {
                         let offset = ByteRef::Low(&mut cpu.temp_addr).get();
-                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        let addr = if cpu.flags.emulation && dl0 {
+                            ((cpu.d & 0xFF00) | ((offset as u16).wrapping_add(cpu.x) & 0xFF)) as u32
+                        } else {
+                            cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32
+                        };
                         if cpu.flags.emulation {
-                            let data = ByteRef::High(&mut cpu.temp_data).get();
-                            sys.write(addr.wrapping_add(1), data, AddressType::Invalid, &cpu.signals);
+                            let data = ByteRef::Low(&mut cpu.temp_data).get();
+                            sys.write(addr, data, AddressType::Invalid, &cpu.signals);
                         } else {
                             let _ = sys.read(addr.wrapping_add(1), AddressType::Invalid, &cpu.signals);
                         }
@@ -1898,7 +1906,11 @@ impl AddressingMode {
                     // Write low byte (final): 8-bit tcu=5(DL=0)/6(DL≠0); 16-bit tcu=7(DL=0)/8(DL≠0)
                     (5, true, false) | (6, false, false) | (7, true, true) | (8, false, true) => {
                         let offset = ByteRef::Low(&mut cpu.temp_addr).get();
-                        let addr = cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32;
+                        let addr = if cpu.flags.emulation && dl0 {
+                            ((cpu.d & 0xFF00) | ((offset as u16).wrapping_add(cpu.x) & 0xFF)) as u32
+                        } else {
+                            cpu.d.wrapping_add(offset as u16).wrapping_add(cpu.x) as u32
+                        };
                         let data = ByteRef::Low(&mut cpu.temp_data).get();
                         sys.write(addr, data, AddressType::Data, &cpu.signals);
                         Some(TaggedByte::Data(Byte::Low(data)))
@@ -2485,6 +2497,38 @@ impl CPU {
         }
 
         system.read(self.s as u32, AddressType::Data, &self.signals)
+    }
+
+    /// Push without mid-instruction emulation page enforcement (for 65816-native instructions).
+    /// The caller is responsible for enforcing emulation page 1 after instruction completion.
+    fn stack_push_raw(&mut self, system: &mut dyn System, byte: u8, as_read: bool) {
+        if as_read {
+            system.read(self.s as u32, AddressType::Data, &self.signals);
+        } else {
+            system.write(self.s as u32, byte, AddressType::Data, &self.signals);
+        }
+
+        if !self.aborted {
+            self.s = self.s.wrapping_sub(1);
+        }
+    }
+
+    /// Pop without mid-instruction emulation page enforcement (for 65816-native instructions).
+    /// The caller is responsible for enforcing emulation page 1 after instruction completion.
+    fn stack_pop_raw(&mut self, system: &mut dyn System) -> u8 {
+        if !self.aborted {
+            self.s = self.s.wrapping_add(1);
+        }
+
+        system.read(self.s as u32, AddressType::Data, &self.signals)
+    }
+
+    /// Enforce emulation mode page 1 stack constraint.
+    /// Called after 65816-native instructions complete in emulation mode.
+    fn enforce_emulation_stack(&mut self) {
+        if self.flags.emulation {
+            ByteRef::High(&mut self.s).set(0x01);
+        }
     }
 
     /// Sets the emulation flag state

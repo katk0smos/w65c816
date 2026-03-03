@@ -379,14 +379,10 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             cpu.pc = cpu.pc.wrapping_add(1);
         }
         3 => {
-            cpu.stack_push(sys, cpu.pbr, false);
+            cpu.stack_push_raw(sys, cpu.pbr, false);
         }
         4 => {
-            let mut s = cpu.s.wrapping_add(1);
-            if cpu.flags.emulation {
-                ByteRef::High(&mut s).set(0x01);
-            }
-
+            let s = cpu.s.wrapping_add(1);
             sys.read(s as u32, AddressType::Invalid, &cpu.signals);
         }
         5 => {
@@ -396,13 +392,14 @@ fn jsr_al(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         }
         6 => {
             let pc = ByteRef::High(&mut cpu.pc).get();
-            cpu.stack_push(sys, pc, false);
+            cpu.stack_push_raw(sys, pc, false);
         }
         7 => {
             let pc = ByteRef::Low(&mut cpu.pc).get();
-            cpu.stack_push(sys, pc, false);
+            cpu.stack_push_raw(sys, pc, false);
             cpu.pc = cpu.temp_addr;
             cpu.pbr = cpu.temp_bank;
+            cpu.enforce_emulation_stack();
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
@@ -505,11 +502,11 @@ fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
                 ByteRef::Low(&mut cpu.temp_data).set(data);
             }
             4 => {
-                let data = sys.read(cpu.temp_addr as u32 + 1, AddressType::Data, &cpu.signals);
+                let data = sys.read((cpu.temp_addr as u32 + 1) & 0xFFFF, AddressType::Data, &cpu.signals);
                 ByteRef::High(&mut cpu.temp_data).set(data);
             }
             5 => {
-                let data = sys.read(cpu.temp_addr as u32 + 2, AddressType::Data, &cpu.signals);
+                let data = sys.read((cpu.temp_addr as u32 + 2) & 0xFFFF, AddressType::Data, &cpu.signals);
                 cpu.pc = cpu.temp_data;
                 cpu.pbr = data;
                 cpu.state = State::Fetch;
@@ -539,7 +536,7 @@ fn jmp(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
                 ByteRef::Low(&mut cpu.temp_data).set(data);
             }
             4 => {
-                let data = sys.read(cpu.temp_addr as u32 + 1, AddressType::Data, &cpu.signals);
+                let data = sys.read((cpu.temp_addr as u32 + 1) & 0xFFFF, AddressType::Data, &cpu.signals);
                 ByteRef::High(&mut cpu.temp_data).set(data);
                 cpu.pc = cpu.temp_data;
                 cpu.state = State::Fetch;
@@ -1193,8 +1190,43 @@ push!(php, cpu, cpu.flags.as_byte() as u16, false);
 push!(phx, cpu, cpu.x, cpu.m16());
 push!(phy, cpu, cpu.y, cpu.m16());
 pull16!(pla, cpu, cpu.a, cpu.a16());
-pull8!(plb, cpu, b, { cpu.dbr = b; cpu.flags.negative = b >> 7 != 0; cpu.flags.zero = b == 0; });
-pull16!(pld, cpu, cpu.d, true);
+fn plb(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 | 2 => {
+            io(cpu, sys);
+        }
+        3 => {
+            let b = cpu.stack_pop_raw(sys);
+            cpu.dbr = b;
+            cpu.flags.negative = b >> 7 != 0;
+            cpu.flags.zero = b == 0;
+            cpu.enforce_emulation_stack();
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn pld(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    match cpu.tcu {
+        1 | 2 => {
+            io(cpu, sys);
+        }
+        3 => {
+            let b = cpu.stack_pop_raw(sys);
+            ByteRef::Low(&mut cpu.d).set(b);
+        }
+        4 => {
+            let b = cpu.stack_pop_raw(sys);
+            ByteRef::High(&mut cpu.d).set(b);
+            cpu.flags.negative = cpu.d >> 15 != 0;
+            cpu.flags.zero = cpu.d == 0;
+            cpu.enforce_emulation_stack();
+            cpu.state = State::Fetch;
+        }
+        _ => unreachable!(),
+    }
+}
 pull8!(plp, cpu, p, cpu.set_p(p));
 pull16!(plx, cpu, cpu.x, cpu.m16());
 pull16!(ply, cpu, cpu.y, cpu.m16());
@@ -1374,11 +1406,12 @@ macro_rules! push_effective {
 
             match cpu.temp_bank {
                 1 => {
-                    cpu.stack_push(sys, (cpu.temp_data >> 8) as u8, false);
+                    cpu.stack_push_raw(sys, (cpu.temp_data >> 8) as u8, false);
                     cpu.temp_bank += 1;
                 }
                 2 => {
-                    cpu.stack_push(sys, cpu.temp_data as u8, false);
+                    cpu.stack_push_raw(sys, cpu.temp_data as u8, false);
+                    cpu.enforce_emulation_stack();
                     cpu.state = State::Fetch;
                 }
                 _ => match am.read(cpu, sys) {
@@ -1418,11 +1451,12 @@ fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         }
         4 => {
             let data = ByteRef::High(&mut cpu.temp_addr).get();
-            cpu.stack_push(sys, data, false);
+            cpu.stack_push_raw(sys, data, false);
         }
         5 => {
             let data = ByteRef::Low(&mut cpu.temp_addr).get();
-            cpu.stack_push(sys, data, false);
+            cpu.stack_push_raw(sys, data, false);
+            cpu.enforce_emulation_stack();
             cpu.state = State::Fetch;
         }
         _ => unreachable!(),
