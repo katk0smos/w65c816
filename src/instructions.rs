@@ -744,7 +744,13 @@ macro_rules! transfer16 {
     }
 }
 
-transfer16!(tcd, cpu, cpu.a, cpu.d);
+fn tcd(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+    implied(cpu, sys);
+    cpu.d = cpu.a;
+    cpu.flags.negative = cpu.d >> 15 != 0;
+    cpu.flags.zero = cpu.d == 0;
+    cpu.state = State::Fetch;
+}
 transfer16!(tcs, cpu, cpu.a, cpu.s);
 
 fn tdc(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
@@ -786,28 +792,38 @@ inc_index!(iny, y, wrapping_add);
 inc_index!(dex, x, wrapping_sub);
 inc_index!(inx, x, wrapping_add);
 
+// Returns (final_r, r_after_low_correction) for BCD-corrected ADC.
+// V flag must use r_after_low_correction (after +6 lower nibble, before +0x60 upper).
+fn adc_bcd(a: u16, l: u16, r: u16) -> (u16, u16) {
+    let h_carry = (a ^ l ^ r) & 0x10 != 0;
+    let low_invalid = (r & 0x0f) > 9;
+    let mut r = r;
+    if h_carry && low_invalid {
+        // Both H-carry and low nibble invalid: add 6 to lower nibble only, suppress carry into upper
+        r = (r & 0xfff0) | ((r + 6) & 0x0f);
+    } else if h_carry || low_invalid {
+        r = r.wrapping_add(6);
+    }
+    let r_after_low = r;
+    if r > 0xff || (r & 0xf0) > 0x90 {
+        r = r.wrapping_add(0x60);
+    }
+    (r, r_after_low)
+}
+
 fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
     match am.read(cpu, sys) {
         Some(TaggedByte::Data(Byte::Low(l))) => {
             let l = l as u16;
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::Low(&mut cpu.a).get() as u16;
-            let mut r = a.wrapping_add(l).wrapping_add(c);
-            // handle decimal mode
-            if cpu.flags.decimal {
-                if (a ^ l ^ r) & 0x10 != 0 {
-                    r = r.wrapping_add(6);
-                }
-
-                if (r & 0xf0) > 0x90 {
-                    r = r.wrapping_add(0x60);
-                }
-            }
+            let binary_r = a.wrapping_add(l).wrapping_add(c);
+            let (r, v_r) = if cpu.flags.decimal { adc_bcd(a, l, binary_r) } else { (binary_r, binary_r) };
             ByteRef::Low(&mut cpu.a).set(r as u8);
             cpu.flags.carry = r > 0xff;
-            cpu.flags.zero = r == 0;
+            cpu.flags.zero = r as u8 == 0;
             cpu.flags.negative = r & 0x80 != 0;
-            cpu.flags.overflow = (a ^ r) & (l ^ r) & 0x80 != 0;
+            cpu.flags.overflow = (a ^ v_r) & (l ^ v_r) & 0x80 != 0;
             if cpu.a8() {
                 cpu.state = State::Fetch;
             }
@@ -816,22 +832,13 @@ fn adc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let h = h as u16;
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::High(&mut cpu.a).get() as u16;
-            let mut r = a.wrapping_add(h).wrapping_add(c);
-            // handle decimal mode
-            if cpu.flags.decimal {
-                if (a ^ h ^ r) & 0x10 != 0 {
-                    r = r.wrapping_add(6);
-                }
-
-                if (r & 0xf0) > 0x90 {
-                    r = r.wrapping_add(0x60);
-                }
-            }
+            let binary_r = a.wrapping_add(h).wrapping_add(c);
+            let (r, v_r) = if cpu.flags.decimal { adc_bcd(a, h, binary_r) } else { (binary_r, binary_r) };
             ByteRef::High(&mut cpu.a).set(r as u8);
             cpu.flags.carry = r > 0xff;
-            cpu.flags.zero = cpu.flags.zero && r == 0;
+            cpu.flags.zero = cpu.flags.zero && r as u8 == 0;
             cpu.flags.negative = r & 0x80 != 0;
-            cpu.flags.overflow = (a ^ r) & (h ^ r) & 0x80 != 0;
+            cpu.flags.overflow = (a ^ v_r) & (h ^ v_r) & 0x80 != 0;
             cpu.state = State::Fetch;
         }
         _ => (),

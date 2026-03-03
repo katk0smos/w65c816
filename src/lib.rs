@@ -861,12 +861,18 @@ impl AddressingMode {
                         None
                     }
                     (4, true, false) | (5, false, false) | (5, true, true) | (6, false, true) => {
-                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32);
+                        // Bank carry from (AA+Y) propagates into DBR
+                        let effective = ((cpu.dbr as u32) << 16)
+                            + cpu.temp_addr as u32
+                            + cpu.y as u32;
                         let data = system.read(effective, AddressType::Data, &cpu.signals);
                         Some(TaggedByte::Data(Byte::Low(data)))
                     }
                     (5, true, false) | (6, false, false) | (6, true, true) | (7, false, true) => {
-                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y).wrapping_add(1) as u32);
+                        let effective = ((cpu.dbr as u32) << 16)
+                            + cpu.temp_addr as u32
+                            + cpu.y as u32
+                            + 1;
                         let data = system.read(effective, AddressType::Data, &cpu.signals);
                         Some(TaggedByte::Data(Byte::High(data)))
                     }
@@ -888,24 +894,16 @@ impl AddressingMode {
                 }
                 3 => {
                     let offset = ByteRef::Low(&mut cpu.temp_addr).get() as u16;
-                    let effective = if cpu.flags.emulation {
-                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
-                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
-                    } else {
-                        cpu.s.wrapping_add(offset)
-                    };
+                    // Spec: addr=0:S+SO — full S + offset, bank 0, no page-1 restriction
+                    let effective = cpu.s.wrapping_add(offset);
                     let aal = system.read(effective as u32, AddressType::Data, &cpu.signals);
                     ByteRef::Low(&mut cpu.temp_data).set(aal);
                     None
                 }
                 4 => {
                     let offset = (ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1);
-                    let effective = if cpu.flags.emulation {
-                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
-                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
-                    } else {
-                        cpu.s.wrapping_add(offset)
-                    };
+                    // Spec: addr=0:S+SO+1 — full S + offset+1, bank 0
+                    let effective = cpu.s.wrapping_add(offset);
                     let aah = system.read(effective as u32, AddressType::Data, &cpu.signals);
                     ByteRef::Low(&mut cpu.temp_addr).set(ByteRef::Low(&mut cpu.temp_data).get());
                     ByteRef::High(&mut cpu.temp_addr).set(aah);
@@ -917,12 +915,18 @@ impl AddressingMode {
                     None
                 }
                 6 => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32);
+                    // Bank carry from (AA+Y) propagates into DBR
+                    let effective = ((cpu.dbr as u32) << 16)
+                        + cpu.temp_addr as u32
+                        + cpu.y as u32;
                     let data = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(data)))
                 }
                 7 => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y).wrapping_add(1) as u32);
+                    let effective = ((cpu.dbr as u32) << 16)
+                        + cpu.temp_addr as u32
+                        + cpu.y as u32
+                        + 1;
                     let data = system.read(effective, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(data)))
                 }
@@ -1618,13 +1622,18 @@ impl AddressingMode {
                         None
                     }
                     (5, true) | (6, false) => {
-                        let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32);
+                        let effective = ((cpu.dbr as u32) << 16)
+                            + cpu.temp_addr as u32
+                            + cpu.y as u32;
                         let v = ByteRef::Low(&mut value).get();
                         system.write(effective, v, AddressType::Data, &cpu.signals);
                         Some(TaggedByte::Data(Byte::Low(v)))
                     }
                     (6, true) | (7, false) => {
-                        let effective = (((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32)).wrapping_add(1);
+                        let effective = ((cpu.dbr as u32) << 16)
+                            + cpu.temp_addr as u32
+                            + cpu.y as u32
+                            + 1;
                         let v = ByteRef::High(&mut value).get();
                         system.write(effective, v, AddressType::Data, &cpu.signals);
                         Some(TaggedByte::Data(Byte::High(v)))
@@ -1647,24 +1656,16 @@ impl AddressingMode {
                 }
                 3 => {
                     let offset = ByteRef::Low(&mut cpu.temp_addr).get() as u16;
-                    let effective = if cpu.flags.emulation {
-                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
-                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
-                    } else {
-                        cpu.s.wrapping_add(offset)
-                    };
+                    // Spec: addr=0:S+SO — full S + offset, bank 0
+                    let effective = cpu.s.wrapping_add(offset);
                     let aal = system.read(effective as u32, AddressType::Data, &cpu.signals);
                     ByteRef::Low(&mut cpu.temp_data).set(aal);
                     None
                 }
                 4 => {
                     let offset = (ByteRef::Low(&mut cpu.temp_addr).get() as u16).wrapping_add(1);
-                    let effective = if cpu.flags.emulation {
-                        let mut s = (ByteRef::Low(&mut cpu.s).get() as u16).wrapping_add(offset);
-                        (1 << 8) | ByteRef::Low(&mut s).get() as u16
-                    } else {
-                        cpu.s.wrapping_add(offset)
-                    };
+                    // Spec: addr=0:S+SO+1 — full S + offset+1, bank 0
+                    let effective = cpu.s.wrapping_add(offset);
                     let aah = system.read(effective as u32, AddressType::Data, &cpu.signals);
                     ByteRef::Low(&mut cpu.temp_addr).set(ByteRef::Low(&mut cpu.temp_data).get());
                     ByteRef::High(&mut cpu.temp_addr).set(aah);
@@ -1676,13 +1677,18 @@ impl AddressingMode {
                     None
                 }
                 6 => {
-                    let effective = ((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32);
+                    let effective = ((cpu.dbr as u32) << 16)
+                        + cpu.temp_addr as u32
+                        + cpu.y as u32;
                     let v = ByteRef::Low(&mut value).get();
                     system.write(effective, v, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::Low(v)))
                 }
                 7 => {
-                    let effective = (((cpu.dbr as u32) << 16) | (cpu.temp_addr.wrapping_add(cpu.y) as u32)).wrapping_add(1);
+                    let effective = ((cpu.dbr as u32) << 16)
+                        + cpu.temp_addr as u32
+                        + cpu.y as u32
+                        + 1;
                     let v = ByteRef::High(&mut value).get();
                     system.write(effective, v, AddressType::Data, &cpu.signals);
                     Some(TaggedByte::Data(Byte::High(v)))
