@@ -815,21 +815,25 @@ fn sbc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::Low(&mut cpu.a).get() as u16;
             let mut r = a.wrapping_add(l).wrapping_add(c);
-            // handle decimal mode
+            let binary_carry = r > 0xff;
+            let r_binary = r;
+            // handle decimal mode: corrections only affect the target nibble (no borrow propagation)
             if cpu.flags.decimal {
-                if (a ^ l ^ r) & 0x10 != 0 {
-                    r = r.wrapping_add(6);
+                if (a ^ l ^ r) & 0x10 == 0 {
+                    // low nibble correction: no half-carry → subtract 6 from low nibble only
+                    r = (r & !0x0Fu16) | (r.wrapping_sub(6) & 0x0F);
                 }
-
-                if (r & 0xf0) > 0x90 {
-                    r = r.wrapping_add(0x60);
+                if !binary_carry {
+                    // high nibble correction: borrow → subtract 0x60 from high nibble only
+                    r = (r & 0x0F) | (r.wrapping_sub(0x60) & 0xF0);
                 }
             }
             ByteRef::Low(&mut cpu.a).set(r as u8);
-            cpu.flags.carry = r > 0xff;
-            cpu.flags.zero = r == 0;
-            cpu.flags.negative = r & 0x80 != 0;
-            cpu.flags.overflow = (a ^ r) & (l ^ r) & 0x80 != 0;
+            cpu.flags.carry = binary_carry;
+            cpu.flags.zero = r as u8 == 0;
+            cpu.flags.negative = r as u8 & 0x80 != 0;
+            // overflow uses binary result (before decimal correction)
+            cpu.flags.overflow = (a ^ r_binary) & (l ^ r_binary) & 0x80 != 0;
             if cpu.a8() {
                 cpu.state = State::Fetch;
             }
@@ -839,21 +843,23 @@ fn sbc(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
             let c = if cpu.flags.carry { 1 } else { 0 };
             let a = ByteRef::High(&mut cpu.a).get() as u16;
             let mut r = a.wrapping_add(h).wrapping_add(c);
-            // handle decimal mode
+            let binary_carry = r > 0xff;
+            let r_binary = r;
+            // handle decimal mode: same correction as low byte
             if cpu.flags.decimal {
-                if (a ^ h ^ r) & 0x10 != 0 {
-                    r = r.wrapping_add(6);
+                if (a ^ h ^ r) & 0x10 == 0 {
+                    r = (r & !0x0Fu16) | (r.wrapping_sub(6) & 0x0F);
                 }
-
-                if (r & 0xf0) > 0x90 {
-                    r = r.wrapping_add(0x60);
+                if !binary_carry {
+                    r = (r & 0x0F) | (r.wrapping_sub(0x60) & 0xF0);
                 }
             }
             ByteRef::High(&mut cpu.a).set(r as u8);
-            cpu.flags.carry = r > 0xff;
-            cpu.flags.zero = cpu.flags.zero && r == 0;
-            cpu.flags.negative = r & 0x80 != 0;
-            cpu.flags.overflow = (a ^ r) & (h ^ r) & 0x80 != 0;
+            cpu.flags.carry = binary_carry;
+            cpu.flags.zero = cpu.flags.zero && r as u8 == 0;
+            cpu.flags.negative = r as u8 & 0x80 != 0;
+            // overflow uses binary result (before decimal correction)
+            cpu.flags.overflow = (a ^ r_binary) & (h ^ r_binary) & 0x80 != 0;
             cpu.state = State::Fetch;
         }
         _ => (),
