@@ -1079,12 +1079,13 @@ fn sta_abs_indexed_y() {
 #[test]
 fn sta_direct_indexed_x() {
     // STA $10,X with D=0, X=5 → write to $0015 — opcode 95
+    // D=0 (DL=0): 4 cycles total (no extra IO for DL≠0)
     let mut sys = Sys::default();
     let mut cpu = boot(&mut sys);
     sys.write_code(0x008000, &[0x95, 0x10]);
     cpu.a = 0x0046;
     cpu.x = 0x0005;
-    for _ in 0..5 { cpu.cycle(&mut sys); }
+    for _ in 0..4 { cpu.cycle(&mut sys); }
     assert_eq!(sys.ram[0x0015], 0x46, "sta direct indexed x");
     assert_eq!(cpu.pc, 0x8002);
 }
@@ -1092,12 +1093,13 @@ fn sta_direct_indexed_x() {
 #[test]
 fn sty_direct_indexed_x() {
     // STY $10,X with D=0, X=5 → write to $0015 — opcode 94
+    // D=0 (DL=0): 4 cycles total (no extra IO for DL≠0)
     let mut sys = Sys::default();
     let mut cpu = boot(&mut sys);
     sys.write_code(0x008000, &[0x94, 0x10]);
     cpu.y = 0x0047;
     cpu.x = 0x0005;
-    for _ in 0..5 { cpu.cycle(&mut sys); }
+    for _ in 0..4 { cpu.cycle(&mut sys); }
     assert_eq!(sys.ram[0x0015], 0x47, "sty direct indexed x");
     assert_eq!(cpu.pc, 0x8002);
 }
@@ -1105,12 +1107,13 @@ fn sty_direct_indexed_x() {
 #[test]
 fn stz_direct_indexed_x() {
     // STZ $10,X with D=0, X=5 → write 0 to $0015 — opcode 74
+    // D=0 (DL=0): 4 cycles total (no extra IO for DL≠0)
     let mut sys = Sys::default();
     sys.ram[0x0015] = 0xFF;
     let mut cpu = boot(&mut sys);
     sys.write_code(0x008000, &[0x74, 0x10]);
     cpu.x = 0x0005;
-    for _ in 0..5 { cpu.cycle(&mut sys); }
+    for _ in 0..4 { cpu.cycle(&mut sys); }
     assert_eq!(sys.ram[0x0015], 0x00, "stz direct indexed x");
     assert_eq!(cpu.pc, 0x8002);
 }
@@ -1118,12 +1121,13 @@ fn stz_direct_indexed_x() {
 #[test]
 fn stx_direct_indexed_y() {
     // STX $10,Y with D=0, Y=6 → write to $0016 — opcode 96
+    // D=0 (DL=0): 4 cycles total (no extra IO for DL≠0)
     let mut sys = Sys::default();
     let mut cpu = boot(&mut sys);
     sys.write_code(0x008000, &[0x96, 0x10]);
     cpu.x = 0x0048;
     cpu.y = 0x0006;
-    for _ in 0..5 { cpu.cycle(&mut sys); }
+    for _ in 0..4 { cpu.cycle(&mut sys); }
     assert_eq!(sys.ram[0x0016], 0x48, "stx direct indexed y");
     assert_eq!(cpu.pc, 0x8002);
 }

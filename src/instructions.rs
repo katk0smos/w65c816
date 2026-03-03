@@ -1040,7 +1040,12 @@ macro_rules! push {
                 }
                 2 if $b16 => {
                     let b = ByteRef::High(&mut r).get();
-                    $cpu.stack_push(sys, b, false);
+                    // Write high byte directly without applying emulation-mode page-1 wrap
+                    // on the intermediate decrement. The wrap is applied by the final push below.
+                    sys.write($cpu.s as u32, b, super::AddressType::Data, &$cpu.signals);
+                    if !$cpu.aborted {
+                        $cpu.s = $cpu.s.wrapping_sub(1);
+                    }
                 }
                 2 | 3 => {
                     let b = ByteRef::Low(&mut r).get();
