@@ -937,6 +937,9 @@ fn mvn_basic() {
     for _ in 0..7 {
         cpu.cycle(&mut sys); // reset
     }
+    // Switch to native mode with 16-bit A/X/Y so block move uses full 16-bit registers
+    cpu.set_e(false);
+    cpu.set_p(0x00);
     cpu.x = 0x0100;
     cpu.y = 0x0200;
     cpu.a = 0x0002; // C = 2 => copy 3 bytes
@@ -966,6 +969,9 @@ fn mvn_single_byte() {
     for _ in 0..7 {
         cpu.cycle(&mut sys);
     }
+    // Switch to native mode with 16-bit A/X/Y so block move uses full 16-bit registers
+    cpu.set_e(false);
+    cpu.set_p(0x00);
     cpu.x = 0x0100;
     cpu.y = 0x0200;
     cpu.a = 0x0000; // C = 0 => copy 1 byte
@@ -996,6 +1002,9 @@ fn mvp_basic() {
     for _ in 0..7 {
         cpu.cycle(&mut sys);
     }
+    // Switch to native mode with 16-bit A/X/Y so block move uses full 16-bit registers
+    cpu.set_e(false);
+    cpu.set_p(0x00);
     cpu.x = 0x0102; // start at end of source
     cpu.y = 0x0202; // start at end of dest
     cpu.a = 0x0002; // C = 2 => copy 3 bytes

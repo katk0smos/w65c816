@@ -105,24 +105,32 @@ fn mvn(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         }
         3 => { // read source byte
             let sba = ByteRef::Low(&mut cpu.temp_addr).get() as u32;
-            let data = sys.read((sba << 16) | cpu.x as u32, AddressType::Data, &cpu.signals);
+            let x = if cpu.flags.index_sel { cpu.x & 0xFF } else { cpu.x } as u32;
+            let data = sys.read((sba << 16) | x, AddressType::Data, &cpu.signals);
             ByteRef::Low(&mut cpu.temp_data).set(data);
         }
         4 => { // write dest byte
             let dba = cpu.temp_bank as u32;
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
             let data = ByteRef::Low(&mut cpu.temp_data).get();
-            sys.write((dba << 16) | cpu.y as u32, data, AddressType::Data, &cpu.signals);
+            sys.write((dba << 16) | y, data, AddressType::Data, &cpu.signals);
             cpu.dbr = cpu.temp_bank;
         }
         5 => { // IO
-            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
+            let ea = ((cpu.temp_bank as u32) << 16) | y;
             let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
         }
         6 => { // IO + update + loop
-            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
+            let ea = ((cpu.temp_bank as u32) << 16) | y;
             let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
             cpu.x = cpu.x.wrapping_add(1);
             cpu.y = cpu.y.wrapping_add(1);
+            if cpu.flags.index_sel {
+                ByteRef::High(&mut cpu.x).set(0);
+                ByteRef::High(&mut cpu.y).set(0);
+            }
             cpu.a = cpu.a.wrapping_sub(1);
             if cpu.a == 0xFFFF {
                 cpu.pc = cpu.pc.wrapping_add(1);
@@ -155,24 +163,32 @@ fn mvp(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         }
         3 => { // read source byte
             let sba = ByteRef::Low(&mut cpu.temp_addr).get() as u32;
-            let data = sys.read((sba << 16) | cpu.x as u32, AddressType::Data, &cpu.signals);
+            let x = if cpu.flags.index_sel { cpu.x & 0xFF } else { cpu.x } as u32;
+            let data = sys.read((sba << 16) | x, AddressType::Data, &cpu.signals);
             ByteRef::Low(&mut cpu.temp_data).set(data);
         }
         4 => { // write dest byte
             let dba = cpu.temp_bank as u32;
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
             let data = ByteRef::Low(&mut cpu.temp_data).get();
-            sys.write((dba << 16) | cpu.y as u32, data, AddressType::Data, &cpu.signals);
+            sys.write((dba << 16) | y, data, AddressType::Data, &cpu.signals);
             cpu.dbr = cpu.temp_bank;
         }
         5 => { // IO
-            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
+            let ea = ((cpu.temp_bank as u32) << 16) | y;
             let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
         }
         6 => { // IO + update + loop
-            let ea = ((cpu.temp_bank as u32) << 16) | (cpu.y as u32);
+            let y = if cpu.flags.index_sel { cpu.y & 0xFF } else { cpu.y } as u32;
+            let ea = ((cpu.temp_bank as u32) << 16) | y;
             let _ = sys.read(ea, AddressType::Invalid, &cpu.signals);
             cpu.x = cpu.x.wrapping_sub(1);
             cpu.y = cpu.y.wrapping_sub(1);
+            if cpu.flags.index_sel {
+                ByteRef::High(&mut cpu.x).set(0);
+                ByteRef::High(&mut cpu.y).set(0);
+            }
             cpu.a = cpu.a.wrapping_sub(1);
             if cpu.a == 0xFFFF {
                 cpu.pc = cpu.pc.wrapping_add(1);
@@ -640,6 +656,32 @@ fn rts(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
 
     match (am, cpu.tcu) {
         (_, 1 | 2) => io(cpu, sys),
+        (RTL, 3) => {
+            // Pre-normalize S to page 1 before first pop, then increment freely.
+            // This ensures page-boundary crossing (e.g. S=0x01FF → 0x0200) works correctly.
+            if cpu.flags.emulation {
+                ByteRef::High(&mut cpu.s).set(0x01);
+            }
+            cpu.s = cpu.s.wrapping_add(1);
+            let data = sys.read(cpu.s as u32, AddressType::Data, &cpu.signals);
+            ByteRef::Low(&mut cpu.pc).set(data);
+        }
+        (RTL, 4) => {
+            cpu.s = cpu.s.wrapping_add(1);
+            let data = sys.read(cpu.s as u32, AddressType::Data, &cpu.signals);
+            ByteRef::High(&mut cpu.pc).set(data);
+        }
+        (RTL, 5) => {
+            cpu.s = cpu.s.wrapping_add(1);
+            let data = sys.read(cpu.s as u32, AddressType::Data, &cpu.signals);
+            cpu.pbr = data;
+            // Post-normalize S back to page 1 after all pops.
+            if cpu.flags.emulation {
+                ByteRef::High(&mut cpu.s).set(0x01);
+            }
+            cpu.pc = cpu.pc.wrapping_add(1);
+            cpu.state = State::Fetch;
+        }
         (_, 3) => {
             let data = cpu.stack_pop(sys);
             ByteRef::Low(&mut cpu.pc).set(data);
@@ -654,12 +696,6 @@ fn rts(cpu: &mut CPU, sys: &mut dyn System, am: AddressingMode) {
                 ByteRef::High(&mut s).set(0x01);
             }
             sys.read(s as u32, AddressType::Invalid, &cpu.signals);
-            cpu.pc = cpu.pc.wrapping_add(1);
-            cpu.state = State::Fetch;
-        }
-        (RTL, 5) => {
-            let data = cpu.stack_pop(sys);
-            cpu.pbr = data;
             cpu.pc = cpu.pc.wrapping_add(1);
             cpu.state = State::Fetch;
         }
