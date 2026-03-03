@@ -2327,6 +2327,10 @@ impl CPU {
                 self.signals.mlb = true;
                 self.tcu = 0;
 
+                if self.flags.emulation {
+                    ByteRef::High(&mut self.s).set(0x01);
+                }
+
                 let effective = ((self.pbr as u32) << 16) | (self.pc as u32);
                 self.ir = system.read(effective, AddressType::Opcode, &self.signals);
 
@@ -2377,7 +2381,11 @@ impl CPU {
                 }
             }
             State::Instruction(f, am) => {
-                f(self, system, am)
+                f(self, system, am);
+                // Enforce emulation-mode stack page after instruction completes
+                if self.state == State::Fetch && self.flags.emulation {
+                    ByteRef::High(&mut self.s).set(0x01);
+                }
             }
             _ => todo!("{:?}", self.state),
         }
@@ -2455,10 +2463,6 @@ impl CPU {
 
         if !self.aborted {
             self.s = self.s.wrapping_sub(1);
-
-            if self.flags.emulation {
-                ByteRef::High(&mut self.s).set(0x01);
-            }
         }
     }
 
@@ -2466,10 +2470,6 @@ impl CPU {
     fn stack_pop(&mut self, system: &mut dyn System) -> u8 {
         if !self.aborted {
             self.s = self.s.wrapping_add(1);
-
-            if self.flags.emulation {
-                ByteRef::High(&mut self.s).set(0x01);
-            }
         }
 
         system.read(self.s as u32, AddressType::Data, &self.signals)

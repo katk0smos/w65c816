@@ -691,19 +691,35 @@ fn rti(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
     }
 }
 
+// Transfer with no flag updates (TXS)
+macro_rules! transfer_nf {
+    ($name:ident, $cpu:ident, $cond8:expr, $r0:expr, $r1:expr) => {
+        fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
+            implied($cpu, sys);
+            if $cond8 {
+                let data = ByteRef::Low(&mut $r0).get();
+                ByteRef::Low(&mut $r1).set(data);
+            } else {
+                $r1 = $r0;
+            }
+        }
+    }
+}
+
+// Transfer with N/Z flag updates
 macro_rules! transfer {
     ($name:ident, $cpu:ident, $cond8:expr, $r0:expr, $r1:expr) => {
         fn $name($cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
             implied($cpu, sys);
-            if $cpu.tcu == 2 {
-                if $cond8 {
-                    let data = ByteRef::Low(&mut $r0).get();
-                    ByteRef::Low(&mut $r1).set(data);
-                } else {
-                    $r1 = $r0;
-                }
-
-                $cpu.state = State::Fetch;
+            if $cond8 {
+                let data = ByteRef::Low(&mut $r0).get();
+                ByteRef::Low(&mut $r1).set(data);
+                $cpu.flags.negative = data >> 7 != 0;
+                $cpu.flags.zero = data == 0;
+            } else {
+                $r1 = $r0;
+                $cpu.flags.negative = $r1 >> 15 != 0;
+                $cpu.flags.zero = $r1 == 0;
             }
         }
     }
@@ -711,12 +727,12 @@ macro_rules! transfer {
 
 transfer!(tax, cpu, cpu.m8(), cpu.a, cpu.x);
 transfer!(tay, cpu, cpu.m8(), cpu.a, cpu.y);
-transfer!(tsx, cpu, cpu.flags.emulation, cpu.s, cpu.x);
+transfer!(tsx, cpu, cpu.m8(), cpu.s, cpu.x);
 transfer!(txa, cpu, cpu.a8(), cpu.x, cpu.a);
-transfer!(txs, cpu, cpu.flags.emulation, cpu.x, cpu.s);
-transfer!(txy, cpu, cpu.flags.emulation, cpu.x, cpu.y);
+transfer_nf!(txs, cpu, cpu.flags.emulation, cpu.x, cpu.s);
+transfer!(txy, cpu, cpu.m8(), cpu.x, cpu.y);
 transfer!(tya, cpu, cpu.a8(), cpu.y, cpu.a);
-transfer!(tyx, cpu, cpu.flags.emulation, cpu.y, cpu.x);
+transfer!(tyx, cpu, cpu.m8(), cpu.y, cpu.x);
 
 macro_rules! transfer16 {
     ($name:ident, $cpu:ident, $r0:expr, $r1:expr) => {
@@ -1330,12 +1346,13 @@ fn per(cpu: &mut CPU, sys: &mut dyn System, _am: AddressingMode) {
         2 => {
             let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let data = sys.read(effective, AddressType::Program, &cpu.signals);
+            cpu.pc = cpu.pc.wrapping_add(1);
             ByteRef::High(&mut cpu.temp_addr).set(data);
         }
         3 => {
             let effective = ((cpu.pbr as u32) << 16) | (cpu.pc as u32);
             let _ = sys.read(effective, AddressType::Invalid, &cpu.signals);
-            cpu.temp_addr = cpu.pc.wrapping_add(1).wrapping_add_signed(cpu.temp_addr as i16);
+            cpu.temp_addr = cpu.pc.wrapping_add_signed(cpu.temp_addr as i16);
         }
         4 => {
             let data = ByteRef::High(&mut cpu.temp_addr).get();
