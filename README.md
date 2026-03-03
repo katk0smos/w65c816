@@ -8,17 +8,15 @@ cores in Rust, and certainly not at the level of emulation I'm doing
 pretty sparse, and as far as I know, none provide a bus-accurate cycle-accurate
 emulator with all signals.
 
-## Warning
-While all instructions are implemented, correct behavior has not been verified
-for many instructions and addressing modes.
-
-The external API is finalized, and you are free to base code off of this with
-the expectation that it will work at some point in the future.
+# Testing
+This core has been validated against
+[this test suite](https://github.com/SingleStepTests/65816) and passes all
+tests. The core has not been validated against actual hardware.
 
 Current plans:
 - [x] continue adding instructions
 - [x] continue adding addressing modes
 - [x] ensure ABORT is implemented for all instructions
   - [ ] ensure ABORT is implemented *correctly* (check with a real '816)
-- [ ] tests, tests, and more tests
+- [x] tests, tests, and more tests
   - [ ] ideally generate tests from a real '816.
